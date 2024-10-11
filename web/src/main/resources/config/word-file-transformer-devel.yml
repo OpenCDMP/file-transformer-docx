@@ -1,0 +1,5 @@
+word-file-transformer:
+  word-plan-template: classpath:documents/plan.docx
+  pid-template: classpath:pidLinks.json
+  word-description-template: classpath:documents/description.docx
+  useSharedStorage: false

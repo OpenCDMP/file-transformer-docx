@@ -1,0 +1,10 @@
+word-file-transformer:
+  transformerId: "docx-file-transformer"
+  organizationReferenceCode: "organisations"
+  grantReferenceCode: "grants"
+  funderReferenceCode: "funders"
+  researcherReferenceCode: "researchers"
+  licenceReferenceCode: "licenses"
+  projectReferenceCode: "projects"
+  datasetReferenceCode: "datasets"
+  publicationReferenceCode: "publications"

@@ -1,0 +1,100 @@
+{
+  "pidLinks": [
+    {
+      "pid": "doi",
+      "link": "https://doi.org/{pid}"
+    },
+    {
+      "pid": "uniprot",
+      "link": "https://uniprot.org/uniprotkb/{pid}"
+    },
+    {
+      "pid": "handle",
+      "link": "https://hdl.handle.net/{pid}"
+    },
+    {
+      "pid": "arxiv",
+      "link": "https://arxiv.org/abs/{pid}"
+    },
+    {
+      "pid": "ascl",
+      "link": "https://ascl.net/{pid}"
+    },
+    {
+      "pid": "orcid",
+      "link": "https://orcid.org/{pid}"
+    },
+    {
+      "pid": "pmid",
+      "link": "https://pubmed.ncbi.nlm.nih.gov/{pid}"
+    },
+    {
+      "pid": "ads",
+      "link": "https://ui.adsabs.harvard.edu/#abs/{pid}"
+    },
+    {
+      "pid": "pmcid",
+      "link": "https://ncbi.nlm.nih.gov/pmc/{pid}"
+    },
+    {
+      "pid": "gnd",
+      "link": "https://d-nb.info/gnd/{pid}"
+    },
+    {
+      "pid": "urn",
+      "link": "https://nbn-resolving.org/{pid}"
+    },
+    {
+      "pid": "sra",
+      "link": "https://ebi.ac.uk/ena/data/view/{pid}"
+    },
+    {
+      "pid": "bioproject",
+      "link": "https://ebi.ac.uk/ena/data/view/{pid}"
+    },
+    {
+      "pid": "biosample",
+      "link": "https://ebi.ac.uk/ena/data/view/{pid}"
+    },
+    {
+      "pid": "ensembl",
+      "link": "https://ensembl.org/id/{pid}"
+    },
+    {
+      "pid": "refseq",
+      "link": "https://ncbi.nlm.nih.gov/entrez/viewer.fcgi?val={pid}"
+    },
+    {
+      "pid": "genome",
+      "link": "https://ncbi.nlm.nih.gov/assembly/{pid}"
+    },
+    {
+      "pid": "geo",
+      "link": "https://ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={pid}"
+    },
+    {
+      "pid": "arrayexpress_array",
+      "link": "https://ebi.ac.uk/arrayexpress/arrays/{pid}"
+    },
+    {
+      "pid": "arrayexpress_experiment",
+      "link": "https://ebi.ac.uk/arrayexpress/experiments/{pid}"
+    },
+    {
+      "pid": "hal",
+      "link": "https://hal.archives-ouvertes.fr/{pid}"
+    },
+    {
+      "pid": "swh",
+      "link": "https://archive.softwareheritage.org/{pid}"
+    },
+    {
+      "pid": "ror",
+      "link": "https://ror.org/{pid}"
+    },
+    {
+      "pid": "viaf",
+      "link": "https://viaf.org/viaf/{pid}"
+    }
+  ]
+}

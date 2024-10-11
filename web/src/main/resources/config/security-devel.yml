@@ -1,0 +1,6 @@
+web:
+  security:
+    idp:
+      resource:
+        jwt:
+          audiences: [ "dmp_zenodo_bridge" ]

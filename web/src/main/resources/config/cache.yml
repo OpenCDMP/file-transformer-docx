@@ -1,0 +1,16 @@
+cache:
+  manager:
+    fallbackToNoOpCache: true
+    caffeineCaches:
+      - names: [ "apikey" ]
+        allowNullValues: true
+        initialCapacity: 100
+        maximumSize: 500
+        enableRecordStats: false
+        expireAfterWriteMinutes: 10
+        expireAfterAccessMinutes: 10
+        refreshAfterWriteMinutes: 10
+    mapCaches:
+  apiKey:
+    name: apikey
+    keyPattern: resolve_$keyhash$:v0

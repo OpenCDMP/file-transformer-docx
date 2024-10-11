@@ -1,0 +1,12 @@
+server:
+  port: 8084
+  tomcat:
+    threads:
+      max: 20
+    max-connections: 10000
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB

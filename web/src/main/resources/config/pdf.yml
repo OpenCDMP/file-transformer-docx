@@ -1,0 +1,4 @@
+pdf:
+  converter:
+    url: ${PDF_CONVERTER_URL}
+    maxInMemorySizeInBytes: 6554000
