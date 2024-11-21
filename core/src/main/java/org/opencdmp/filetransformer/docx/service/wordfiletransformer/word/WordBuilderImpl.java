@@ -821,6 +821,10 @@ public class WordBuilderImpl implements WordBuilder {
                 break;
             }
             case TAGS:
+                if (fieldValueModel.getTextListValue() != null && !fieldValueModel.getTextListValue().isEmpty()) {
+                    values.addAll(fieldValueModel.getTextListValue());
+                }
+                break;
             case SELECT: {
                 if (fieldValueModel.getTextListValue() != null && !fieldValueModel.getTextListValue().isEmpty()) {
                     SelectDataModel selectDataModel = (SelectDataModel) field.getData();
