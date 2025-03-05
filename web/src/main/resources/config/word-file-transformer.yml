@@ -1,10 +1,13 @@
 word-file-transformer:
   transformerId: "docx-file-transformer"
-  organizationReferenceCode: "organisations"
-  grantReferenceCode: "grants"
-  funderReferenceCode: "funders"
-  researcherReferenceCode: "researchers"
-  licenceReferenceCode: "licenses"
-  projectReferenceCode: "projects"
-  datasetReferenceCode: "datasets"
-  publicationReferenceCode: "publications"
+  organizationReferenceCode: ${WORD_FILE_TRANSFORMER_ORGANIZATIONS_CODE:organisations}
+  grantReferenceCode: ${WORD_FILE_TRANSFORMER_GRANTS_CODE:grants}
+  researcherReferenceCode: ${WORD_FILE_TRANSFORMER_RESEARCHERS_CODE:researchers}
+  licenceReferenceCode: ${WORD_FILE_TRANSFORMER_LICENCES_CODE:licenses}
+  datasetReferenceCode: ${WORD_FILE_TRANSFORMER_DATASETS_CODE:datasets}
+  publicationReferenceCode: ${WORD_FILE_TRANSFORMER_PUBLICATIONS_CODE:publications}
+  word-plan-template: ${WORD_FILE_TRANSFORMER_WORD_PLAN_TEMPLATE:classpath:documents/plan.docx}
+  pid-template: ${WORD_FILE_TRANSFORMER_PID_LINKS:classpath:pidLinks.json}
+  word-description-template: ${WORD_FILE_TRANSFORMER_WORD_DESCRIPTION_TEMPLATE:classpath:documents/description.docx}
+  useSharedStorage: ${WORD_FILE_TRANSFORMER_USE_SHARED_STORAGE:false}
+  languages: classpath:languages.json

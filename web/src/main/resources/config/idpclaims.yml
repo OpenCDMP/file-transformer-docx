@@ -19,7 +19,7 @@ idpclient:
         - type: email
       Roles:
         - type: resource_access
-          path: dmp_zenodo_bridge.roles
+          path: ${IDP_CLAIMS_ROLES_PATH}
       Scope:
         - type: scope
       AccessToken:

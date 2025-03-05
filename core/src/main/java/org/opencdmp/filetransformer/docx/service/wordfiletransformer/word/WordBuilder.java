@@ -22,4 +22,7 @@ public interface WordBuilder {
 	void fillFirstPage(PlanModel planEntity, DescriptionModel descriptionModel, XWPFDocument document, boolean isDescription);
 
 	void fillFooter(PlanModel planEntity, DescriptionModel descriptionModel, XWPFDocument document);
+
+	void fillHeader(PlanModel planEntity, DescriptionModel descriptionModel, XWPFDocument document);
+
 }

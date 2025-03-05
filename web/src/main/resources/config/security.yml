@@ -11,4 +11,6 @@ web:
         jwt:
           claims: [ role, x-role ]
           issuer-uri: ${IDP_ISSUER_URI}
+          audiences:
+            - ${SECURITY_AUDIENCE}
           validIssuer: ${IDP_ISSUER_URI}

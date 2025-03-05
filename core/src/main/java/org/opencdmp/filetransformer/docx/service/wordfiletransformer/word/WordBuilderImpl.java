@@ -1,27 +1,30 @@
 package org.opencdmp.filetransformer.docx.service.wordfiletransformer.word;
 
 import gr.cite.tools.exception.MyApplicationException;
+import org.apache.fop.render.intermediate.util.IFConcatenator;
 import org.opencdmp.commonmodels.enums.FieldType;
 import org.opencdmp.commonmodels.models.FileEnvelopeModel;
+import org.opencdmp.commonmodels.models.PlanUserModel;
 import org.opencdmp.commonmodels.models.description.DescriptionModel;
 import org.opencdmp.commonmodels.models.description.PropertyDefinitionFieldSetItemModel;
 import org.opencdmp.commonmodels.models.description.PropertyDefinitionFieldSetModel;
 import org.opencdmp.commonmodels.models.description.PropertyDefinitionModel;
 import org.opencdmp.commonmodels.models.descriptiotemplate.*;
 import org.opencdmp.commonmodels.models.descriptiotemplate.fielddata.*;
+import org.opencdmp.commonmodels.models.plan.PlanContactModel;
 import org.opencdmp.commonmodels.models.plan.PlanModel;
 import org.opencdmp.commonmodels.models.planreference.PlanReferenceModel;
 import org.opencdmp.commonmodels.models.reference.ReferenceFieldModel;
 import org.opencdmp.commonmodels.models.reference.ReferenceModel;
+import org.opencdmp.filetransformer.docx.model.Language;
+import org.opencdmp.filetransformer.docx.service.language.LanguageService;
 import org.opencdmp.filetransformer.docx.service.storage.FileStorageService;
-import org.opencdmp.filetransformer.docx.service.storage.FileStorageServiceProperties;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.WordFileTransformerServiceProperties;
 import org.opencdmp.filetransformer.docx.model.PidLink;
 import org.opencdmp.filetransformer.docx.model.interfaces.ApplierWithValue;
 import org.opencdmp.filetransformer.docx.service.pid.PidService;
 import org.opencdmp.filetransformer.docx.model.enums.ParagraphStyle;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.visibility.VisibilityService;
-import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.*;
 import org.apache.xmlbeans.XmlCursor;
@@ -29,7 +32,6 @@ import org.apache.xmlbeans.XmlObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.NodeTraversor;
-import org.opencdmp.filetransformerbase.interfaces.FileTransformerConfiguration;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +42,6 @@ import org.springframework.stereotype.Component;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
-import javax.management.InvalidApplicationException;
 import java.io.*;
 import java.math.BigInteger;
 import java.time.ZoneId;
@@ -70,12 +71,14 @@ public class WordBuilderImpl implements WordBuilder {
     private final PidService pidService;
     private final Map<ParagraphStyle, ApplierWithValue<XWPFDocument, Object, XWPFParagraph>> options = new HashMap<>();
     private final Map<ParagraphStyle, ApplierWithValue<XWPFTableCell, Object, XWPFParagraph>> optionsInTable = new HashMap<>();
+    private final LanguageService languageService;
 
-    public WordBuilderImpl(FileStorageService fileStorageService, WordFileTransformerServiceProperties wordFileTransformerServiceProperties, PidService pidService) {
+    public WordBuilderImpl(FileStorageService fileStorageService, WordFileTransformerServiceProperties wordFileTransformerServiceProperties, PidService pidService, LanguageService languageService) {
 	    this.fileStorageService = fileStorageService;
 	    this.wordFileTransformerServiceProperties = wordFileTransformerServiceProperties;
         this.pidService = pidService;
-	    this.cTAbstractNum = CTAbstractNum.Factory.newInstance();
+        this.languageService = languageService;
+        this.cTAbstractNum = CTAbstractNum.Factory.newInstance();
         this.cTAbstractNum.setAbstractNumId(BigInteger.valueOf(1));
         this.indent = 0;
         this.imageCount = 0;
@@ -363,6 +366,8 @@ public class WordBuilderImpl implements WordBuilder {
                 int numOfRows = 0;
                 if (fieldSetModel.getMultiplicity() != null && fieldSetModel.getMultiplicity().getTableView()) {
                     tbl = mainDocumentPart.createTable();
+                    tbl.setWidthType(TableWidthType.PCT);
+                    tbl.setWidth("100%");
                     tbl.setTableAlignment(TableRowAlign.CENTER);
                     mainDocumentPart.createParagraph();
                     createHeadersInTable(fieldSetModel.getFields(), propertyDefinitionFieldSetItemModels.getFirst(), tbl, visibilityService);
@@ -521,6 +526,16 @@ public class WordBuilderImpl implements WordBuilder {
                                     hasMultiplicityItems = false;
                                 }
                             }
+                        } else if (fieldValueModel != null && fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty() && fieldValueModel.getFile() != null) {
+                            if (fieldValueModel.getFile().getFilename() != null && !fieldValueModel.getFile().getFilename().isBlank()) {
+                                XWPFParagraph paragraph = addCellContent(fieldValueModel.getFile().getFilename(), mainDocumentPart, ParagraphStyle.TEXT, numId, indent, numOfRows, numOfCells, 0);
+                                if (paragraph != null) {
+                                    hasValue = true;
+                                }
+                                if (hasMultiplicityItems) {
+                                    hasMultiplicityItems = false;
+                                }
+                            }
                         }
                     } else if (fieldValueModel != null) {
                         this.indent = indent;
@@ -640,6 +655,16 @@ public class WordBuilderImpl implements WordBuilder {
                                 if (isImage) {
                                     if (fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty()) {
                                         XWPFParagraph paragraph = addParagraphContent(fieldValueModel.getFile(), mainDocumentPart, ParagraphStyle.IMAGE, numId, 0); //TODO
+                                        if (paragraph != null) {
+                                            hasValue = true;
+                                        }
+                                        if (hasMultiplicityItems) {
+                                            hasMultiplicityItems = false;
+                                        }
+                                    }
+                                } else if (fieldValueModel != null && fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty() && fieldValueModel.getFile() != null) {
+                                    if (fieldValueModel.getFile().getFilename() != null && !fieldValueModel.getFile().getFilename().isBlank()) {
+                                        XWPFParagraph paragraph = addParagraphContent(fieldValueModel.getFile().getFilename(), mainDocumentPart, ParagraphStyle.TEXT, numId, indent);
                                         if (paragraph != null) {
                                             hasValue = true;
                                         }
@@ -827,7 +852,13 @@ public class WordBuilderImpl implements WordBuilder {
                 break;
             case SELECT: {
                 if (fieldValueModel.getTextListValue() != null && !fieldValueModel.getTextListValue().isEmpty()) {
-                    SelectDataModel selectDataModel = (SelectDataModel) field.getData();
+                    SelectDataModel selectDataModel;
+                    try {
+                        selectDataModel = (SelectDataModel) field.getData();
+                    } catch (Exception e) {
+                        logger.error("data: " + field.getData() + "values: " + fieldValueModel.getTextListValue());
+                        throw e;
+                    }
                     if (selectDataModel != null && selectDataModel.getOptions() != null && !selectDataModel.getOptions().isEmpty()) {
                         for (SelectDataModel.OptionModel option : selectDataModel.getOptions()) {
                             if (fieldValueModel.getTextListValue().contains(option.getValue()) || fieldValueModel.getTextListValue().contains(option.getLabel())) values.add(option.getLabel());
@@ -905,12 +936,94 @@ public class WordBuilderImpl implements WordBuilder {
         return -1;
     }
 
-    private List<ReferenceModel> getReferenceModelOfTypeCode(PlanModel plan, String code) {
+    private List<String> getReferenceTypeCodesFromDocument(XWPFDocument doc, boolean isFooterMode) {
+        List<String> codes = new ArrayList<>();
+        if (doc == null) throw new MyApplicationException("Document required");
+
+        if (doc.getParagraphs() != null && !isFooterMode) {
+            for (XWPFParagraph p : doc.getParagraphs()) {
+                this.getReferenceTypeCodeFromText(p.getText(), codes);
+            }
+        }
+
+        if (doc.getTables() != null) {
+            for (XWPFTable tbl : doc.getTables()) {
+                for (XWPFTableRow row : tbl.getRows()) {
+                    for (XWPFTableCell cell : row.getTableCells()) {
+                        for (XWPFParagraph p : cell.getParagraphs()) {
+                            this.getReferenceTypeCodeFromText(p.getText(), codes);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (doc.getFooterList() != null) {
+            for (XWPFFooter f : doc.getFooterList()) {
+                for(XWPFParagraph p : f.getParagraphs()){
+                    this.getReferenceTypeCodeFromText(p.getText(), codes);
+                }
+            }
+        }
+
+        if (doc.getHeaderList() != null) {
+            for (XWPFHeader f : doc.getHeaderList()) {
+                for(XWPFParagraph p : f.getParagraphs()){
+                    this.getReferenceTypeCodeFromText(p.getText(), codes);
+                }
+            }
+        }
+
+        return codes;
+    }
+
+    private void getReferenceTypeCodeFromText(String text, List<String> existingCodes) {
+        if (text != null && (text.contains("'{OPENCDMP.PLAN-REFERENCE.") || text.contains("'{OPENCDMP.DESCRIPTION-REFERENCE.")) && text.contains("}'")) {
+            String[] parts = text.split("\\.");
+            int i = 0;
+            for (String part: parts) {
+                if (part.equals("PLAN-REFERENCE") || part.equals("DESCRIPTION-REFERENCE")) {
+                    // find the next word that contains code
+                    String codeParts = parts[i + 1];
+                    if (codeParts.contains("}'")) {
+                        String code = codeParts.split("}'")[0];
+                        if (code != null && !existingCodes.contains(code)) existingCodes.add(code);
+                    }
+                }
+                i++;
+            }
+        }
+    }
+
+    private List<ReferenceModel> getPlanReferenceModelOfTypeCode(PlanModel plan, String code) {
         List<ReferenceModel> response = new ArrayList<>();
         if (plan.getReferences() == null) return response;
         for (PlanReferenceModel planReferenceModel : plan.getReferences()) {
-            if (planReferenceModel.getReference() != null && planReferenceModel.getReference().getType() != null && planReferenceModel.getReference().getType().getCode() != null && planReferenceModel.getReference().getType().getCode().equals(code)) {
+            if (planReferenceModel.getReference() != null && planReferenceModel.getReference().getType() != null && planReferenceModel.getReference().getType().getCode() != null && planReferenceModel.getReference().getType().getCode().equalsIgnoreCase(code)) {
                 response.add(planReferenceModel.getReference());
+            }
+        }
+        return response;
+    }
+
+    private List<ReferenceModel> getDescriptionReferenceModelOfTypeCode(DescriptionModel description, String code) {
+        List<ReferenceModel> response = new ArrayList<>();
+
+        if (description.getProperties() != null && description.getProperties().getFieldSets() != null) {
+            for (Map.Entry<String, PropertyDefinitionFieldSetModel> entry : description.getProperties().getFieldSets().entrySet()) {
+                PropertyDefinitionFieldSetModel fieldSet = entry.getValue();
+                for (PropertyDefinitionFieldSetItemModel item : fieldSet.getItems()) {
+                    for (Map.Entry<String, org.opencdmp.commonmodels.models.description.FieldModel> fieldEntry : item.getFields().entrySet()) {
+                        org.opencdmp.commonmodels.models.description.FieldModel field = fieldEntry.getValue();
+                        if (field.getReferences() != null) {
+                            for (ReferenceModel referenceModel : field.getReferences()) {
+                                if (referenceModel.getType().getCode().equalsIgnoreCase(code)) {
+                                    response.add(referenceModel);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         return response;
@@ -923,45 +1036,22 @@ public class WordBuilderImpl implements WordBuilder {
 
         int parPos = 0;
         int descrParPos = -1;
-        List<ReferenceModel> grants = this.getReferenceModelOfTypeCode(planEntity, this.wordFileTransformerServiceProperties.getGrantReferenceCode());
-        List<ReferenceModel> researchers = this.getReferenceModelOfTypeCode(planEntity, this.wordFileTransformerServiceProperties.getResearcherReferenceCode());
-        List<ReferenceModel> organizations = this.getReferenceModelOfTypeCode(planEntity, this.wordFileTransformerServiceProperties.getOrganizationReferenceCode());
-        List<ReferenceModel> funders = this.getReferenceModelOfTypeCode(planEntity, this.wordFileTransformerServiceProperties.getFunderReferenceCode());
+        List<String> referenceTypeCodes = this.getReferenceTypeCodesFromDocument(document, false);
 
         XWPFParagraph descrPar = null;
         for (XWPFParagraph p : document.getParagraphs()) {
 
-            this.replaceTextSegment(p, "'{ARGOS.DMP.TITLE}'", planEntity.getLabel());
-            this.replaceTextSegment(p, "'{ARGOS.DMP.VERSION}'", "Version " + planEntity.getVersion());
-            if (descriptionModel != null) {
-                this.replaceTextSegment(p, "'{ARGOS.DATASET.TITLE}'", descriptionModel.getLabel());
-            }
+            this.fillCodes(planEntity, descriptionModel, p, referenceTypeCodes, false, false);
 
-            StringBuilder researchersNames = new StringBuilder();
-            int i = 0;
-            for (ReferenceModel researcher : researchers) {
-                i++;
-                researchersNames.append(researcher.getLabel()).append(i < researchers.size() ? ", " : "");
-            }
-            this.replaceTextSegment(p, "'{ARGOS.DMP.RESEARCHERS}'", researchersNames.toString(), 15);
-
-            StringBuilder organisationsNames = new StringBuilder();
-            i = 0;
-            for (ReferenceModel organisation : organizations) {
-                i++;
-                organisationsNames.append(organisation.getLabel()).append(i < organizations.size() ? ", " : "");
-            }
-            this.replaceTextSegment(p, "'{ARGOS.DMP.ORGANIZATIONS}'", organisationsNames.toString(), 15);
-
-            if (this.textSegmentExists(p, "'{ARGOS.DMP.DESCRIPTION}'")) {
+            if (this.textSegmentExists(p, "'{OPENCDMP.PLAN.DESCRIPTION}'")) {
                 descrParPos = parPos;
                 descrPar = p;
-                this.replaceTextSegment(p, "'{ARGOS.DMP.DESCRIPTION}'", "");
+                this.replaceTextSegment(p, "'{OPENCDMP.PLAN.DESCRIPTION}'", "");
             }
-            if (this.textSegmentExists(p, "'{ARGOS.DATASET.DESCRIPTION}'")) {
+            if (this.textSegmentExists(p, "'{OPENCDMP.DESCRIPTION.DESCRIPTION}'")) {
                 descrParPos = parPos;
                 descrPar = p;
-                this.replaceTextSegment(p, "'{ARGOS.DATASET.DESCRIPTION}'", "");
+                this.replaceTextSegment(p, "'{OPENCDMP.DESCRIPTION.DESCRIPTION}'", "");
             }
         }
         if ((descrParPos != -1) &&  (planEntity.getDescription() != null) && !isDescription) {
@@ -979,32 +1069,121 @@ public class WordBuilderImpl implements WordBuilder {
             NodeTraversor.traverse(htmlToWorldBuilder, htmlDoc);
         }
 
-
-        XWPFTable tbl = document.getTables().getFirst();
-        Iterator<XWPFTableRow> it = tbl.getRows().iterator();
-        it.next(); // skip first row
-        if (it.hasNext() && !funders.isEmpty()) {
-            XWPFParagraph p = it.next().getCell(0).getParagraphs().getFirst();
-            XWPFRun run = p.createRun();
-            run.setText(funders.getFirst().getLabel());
-            run.setFontSize(15);
-            p.setAlignment(ParagraphAlignment.CENTER);
-        }
-        it = tbl.getRows().iterator();
-        it.next();
-        if (it.hasNext() && !grants.isEmpty()) {
-            XWPFParagraph p = it.next().getCell(1).getParagraphs().getFirst();
-            XWPFRun run = p.createRun();
-            String text = grants.getFirst().getLabel();
-            String reference = grants.getFirst().getReference();
-            if (reference != null) {
-                String[] parts = reference.split("::");
-                text += parts.length > 1 ? "/ No " + parts[parts.length - 1] : "";
+        for (XWPFTable tbl : document.getTables()) {
+            for (XWPFTableRow row : tbl.getRows()) {
+                for (XWPFTableCell cell : row.getTableCells()) {
+                    for (XWPFParagraph p : cell.getParagraphs()) {
+                        this.fillCodes(planEntity, descriptionModel, p, referenceTypeCodes,false, true);
+                    }
+                }
             }
-            run.setText(text);
-            run.setFontSize(15);
-            p.setAlignment(ParagraphAlignment.CENTER);
         }
+    }
+
+    private void fillCodes(PlanModel planEntity, DescriptionModel descriptionModel, XWPFParagraph paragraph, List<String> referenceTypeCodes, boolean isFooterMode, boolean isTextDescriptionIncluded){
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(ZoneId.systemDefault());
+
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.TITLE}'", planEntity.getLabel());
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.VERSION}'", "" + planEntity.getVersion());
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.STATUS}'",  planEntity.getStatus() != null ? planEntity.getStatus().getName() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.ID}'", planEntity.getId() != null ?  planEntity.getId().toString() : "");
+        if (this.textSegmentExists(paragraph, "'{OPENCDMP.PLAN.LANGUAGE}'")) {
+            if (planEntity.getLanguage() != null) {
+                Language language = this.languageService.getLanguage(planEntity.getLanguage());
+                if (language != null) this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.LANGUAGE}'",  language.getName() != null ? language.getName(): "");
+            }
+            else this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.LANGUAGE}'",  "");
+        }
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.ACCESS-TYPE}'", planEntity.getAccessType() != null ? planEntity.getAccessType().name() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.BLUEPRINT.NAME}'", planEntity.getPlanBlueprint() != null ?  planEntity.getPlanBlueprint().getLabel() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.CREATED-AT}'", planEntity.getCreatedAt() != null ? formatter.format(planEntity.getCreatedAt()) : "-" );
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.UPDATED-AT}'", planEntity.getUpdatedAt() != null ? formatter.format(planEntity.getUpdatedAt()) : "-" );
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.FINALIZED-AT}'", planEntity.getFinalizedAt() != null ? formatter.format(planEntity.getFinalizedAt()) : "-" );
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.DEPOSIT-IDENTIFIERS}'", planEntity.getEntityDois() != null && !planEntity.getEntityDois().isEmpty() ? planEntity.getEntityDois().getFirst().getDoi() : isFooterMode ? "-" : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.CREATOR.NAME}'", planEntity.getCreator() != null && planEntity.getCreator().getName() != null && !planEntity.getCreator().getName().isEmpty() ? planEntity.getCreator().getName(): isFooterMode ? "-" : "");
+
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.ID}'", descriptionModel != null && descriptionModel.getId() != null ?  descriptionModel.getId().toString() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.TITLE}'", descriptionModel != null ? descriptionModel.getLabel() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.STATUS}'", descriptionModel != null && descriptionModel.getStatus() != null ? descriptionModel.getStatus().getName() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.TEMPLATE.NAME}'", descriptionModel != null && descriptionModel.getDescriptionTemplate() != null && descriptionModel.getDescriptionTemplate().getLabel() != null ? descriptionModel.getDescriptionTemplate().getLabel() : "");
+        this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.CREATED-AT}'",descriptionModel != null && descriptionModel.getCreatedAt() != null ? formatter.format(descriptionModel.getCreatedAt()) : "-" );
+        if (this.textSegmentExists(paragraph, "'{OPENCDMP.DESCRIPTION.SECTION}'")) {
+            if (descriptionModel != null && descriptionModel.getSectionId() != null && planEntity.getPlanBlueprint() != null && planEntity.getPlanBlueprint().getDefinition() != null && planEntity.getPlanBlueprint().getDefinition().getSections() != null) {
+                org.opencdmp.commonmodels.models.planblueprint.SectionModel sectionModel = planEntity.getPlanBlueprint().getDefinition().getSections().stream()
+                        .filter(section -> section.getId() != null && section.getId().equals(descriptionModel.getSectionId()))
+                        .findFirst().orElse(null);
+                this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.SECTION}'", sectionModel != null ? sectionModel.getLabel() : "");
+            } else {
+                this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.SECTION}'", "");
+            }
+        }
+
+        for (String code: referenceTypeCodes) {
+            List<ReferenceModel> referencesByTypeCode = this.getPlanReferenceModelOfTypeCode(planEntity, code);
+            this.replaceReference(paragraph, referencesByTypeCode, "'{OPENCDMP.PLAN-REFERENCE." + code.toUpperCase() + "}'", isFooterMode);
+        }
+        if (descriptionModel != null) {
+            for (String code : referenceTypeCodes) {
+                List<ReferenceModel> referencesByTypeCode = this.getDescriptionReferenceModelOfTypeCode(descriptionModel, code);
+                this.replaceReference(paragraph, referencesByTypeCode, "'{OPENCDMP.DESCRIPTION-REFERENCE." + code.toUpperCase() + "}'", isFooterMode);
+            }
+        }
+        if (this.textSegmentExists(paragraph, "'{OPENCDMP.PLAN.USERS}'") || this.textSegmentExists(paragraph, "'{OPENCDMP.PLAN.USERS-WITH-ROLES}'")) {
+            boolean isUserCodeWithRole =  this.textSegmentExists(paragraph, "'{OPENCDMP.PLAN.USERS-WITH-ROLES}'");
+
+            List<PlanUserModel> userModels = planEntity.getUsers();
+            StringBuilder usersString = new StringBuilder();
+            if (userModels != null && !userModels.isEmpty()) {
+                int i = 0;
+                for (PlanUserModel userModel : userModels) {
+                    i++;
+                    if(userModel != null){
+                        if(!isUserCodeWithRole) usersString.append(userModel.getUser().getName()).append(i < userModels.size() ? ", " : "");
+                        else usersString.append(userModel.getUser().getName()).append(" (").append(userModel.getRole()).append(") ").append(i < userModels.size() ? ", " : "");
+                    }
+                }
+                this.replaceTextSegment(paragraph, isUserCodeWithRole ? "'{OPENCDMP.PLAN.USERS-WITH-ROLES}'" : "'{OPENCDMP.PLAN.USERS}'" , usersString.toString());
+            } else this.replaceTextSegment(paragraph, isUserCodeWithRole ? "'{OPENCDMP.PLAN.USERS-WITH-ROLES}'" : "'{OPENCDMP.PLAN.USERS}'", isFooterMode ? "-" : "");
+        }
+
+        if (this.textSegmentExists(paragraph, "'{OPENCDMP.PLAN.CONTACTS}'")) {
+            List<PlanContactModel> contactModels = planEntity.getProperties().getContacts();
+            StringBuilder contactsString = new StringBuilder();
+            if (contactModels != null && !contactModels.isEmpty()) {
+                int i = 0;
+                for (PlanContactModel planContactModel : contactModels) {
+                    i++;
+                    if(planContactModel != null){
+                        contactsString.append(planContactModel.getFirstName()).append(" ").append(planContactModel.getLastName()).append(" (").append(planContactModel.getEmail()).append(") ").append(i < contactModels.size() ? ", " : "");
+                    }
+                }
+                this.replaceTextSegment(paragraph,  "'{OPENCDMP.PLAN.CONTACTS}'" , contactsString.toString());
+            } else this.replaceTextSegment(paragraph,"'{OPENCDMP.PLAN.CONTACTS}'", isFooterMode ? "-" : "");
+        }
+
+        if(isTextDescriptionIncluded){
+            if (this.textSegmentExists(paragraph, "'{OPENCDMP.PLAN.DESCRIPTION}'")) {
+                this.replaceTextSegment(paragraph, "'{OPENCDMP.PLAN.DESCRIPTION}'", planEntity.getDescription()!= null ? planEntity.getDescription() : "");
+            }
+            if (this.textSegmentExists(paragraph, "'{OPENCDMP.DESCRIPTION.DESCRIPTION}'")) {
+                this.replaceTextSegment(paragraph, "'{OPENCDMP.DESCRIPTION.DESCRIPTION}'", descriptionModel != null && descriptionModel.getDescription()!= null ? descriptionModel.getDescription() : "");
+            }
+        }
+
+    }
+
+    private void replaceReference(XWPFParagraph paragraph, List<ReferenceModel> referencesByTypeCode, String textToFind, boolean isFooterMode) {
+        StringBuilder referencesByTypeCodeNames = new StringBuilder();
+        int i = 0;
+        for (ReferenceModel referenceModel : referencesByTypeCode) {
+            i++;
+            referencesByTypeCodeNames.append(referenceModel.getLabel()).append(i < referencesByTypeCode.size() ? ", " : "");
+        }
+        if (!isFooterMode)
+            this.replaceTextSegment(paragraph, textToFind, referencesByTypeCodeNames.toString(), 15);
+        else
+            this.replaceTextSegment(paragraph, textToFind, !referencesByTypeCode.isEmpty() ? referencesByTypeCode.getFirst().getReference() : "-");
     }
 
     private boolean textSegmentExists(XWPFParagraph paragraph, String textToFind) {
@@ -1128,28 +1307,25 @@ public class WordBuilderImpl implements WordBuilder {
     public void fillFooter(PlanModel planEntity, DescriptionModel descriptionModel, XWPFDocument document) {
         if (planEntity == null) throw new MyApplicationException("planEntity required");
 
-        List<ReferenceModel> licences = this.getReferenceModelOfTypeCode(planEntity, this.wordFileTransformerServiceProperties.getLicenceReferenceCode());
+        List<String> referenceTypeCodes = this.getReferenceTypeCodesFromDocument(document, true);
         document.getFooterList().forEach(xwpfFooter -> {
             for (XWPFParagraph p : xwpfFooter.getParagraphs()) {
-                if (p != null) {
-                    this.replaceTextSegment(p, "'{ARGOS.DMP.TITLE}'", planEntity.getLabel());
-                    if (descriptionModel != null) {
-                        this.replaceTextSegment(p, "'{ARGOS.DATASET.TITLE}'", descriptionModel.getLabel());
-                    }
-                    if (!licences.isEmpty() && licences.getFirst().getReference() != null && !licences.getFirst().getReference().isBlank()) {
-                        this.replaceTextSegment(p, "'{ARGOS.DMP.LICENSE}'", licences.getFirst().getReference());
-                    } else {
-                        this.replaceTextSegment(p, "'{ARGOS.DMP.LICENSE}'", "License: -");
-                    }
-                    if (planEntity.getEntityDois() != null && !planEntity.getEntityDois().isEmpty()) {
-                        this.replaceTextSegment(p, "'{ARGOS.DMP.DOI}'", planEntity.getEntityDois().getFirst().getDoi());
-                    } else {
-                        this.replaceTextSegment(p, "'{ARGOS.DMP.DOI}'", "-");
-                    }
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(ZoneId.systemDefault());
-                    this.replaceTextSegment(p, "'{ARGOS.DMP.LAST_MODIFIED}'", formatter.format(planEntity.getUpdatedAt()));
-                }
+                this.fillCodes(planEntity, descriptionModel, p, referenceTypeCodes,true, true);
             }
         });
     }
+
+    @Override
+    public void fillHeader(PlanModel planEntity, DescriptionModel descriptionModel, XWPFDocument document) {
+        if (planEntity == null) throw new MyApplicationException("planEntity required");
+
+        List<String> referenceTypeCodes = this.getReferenceTypeCodesFromDocument(document, true);
+        document.getHeaderList().forEach(xwpfHeader -> {
+            for (XWPFParagraph p : xwpfHeader.getParagraphs()) {
+                this.fillCodes(planEntity, descriptionModel, p, referenceTypeCodes,true, true);
+            }
+        });
+    }
+
+
 }

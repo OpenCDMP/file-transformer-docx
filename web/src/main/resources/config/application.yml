@@ -2,7 +2,7 @@ spring:
   jackson:
     default-property-inclusion: non_null
   config:
-    import: optional:classpath:config/app.env[.properties], optional:file:../config/app.env[.properties],
+    import: optional:classpath:config/app.env[.properties], optional:classpath:config/app-${spring.profiles.active}.env[.properties], optional:file:../config/app.env[.properties], optional:file:../config/app-${spring.profiles.active}.env[.properties],
       optional:classpath:config/server.yml[.yml], optional:classpath:config/server-${spring.profiles.active}.yml[.yml], optional:file:../config/server-${spring.profiles.active}.yml[.yml],
       optional:classpath:config/storage.yml[.yml], optional:classpath:config/storage-${spring.profiles.active}.yml[.yml], optional:file:../config/storage-${spring.profiles.active}.yml[.yml],
       optional:classpath:config/security.yml[.yml], optional:classpath:config/security-${spring.profiles.active}.yml[.yml], optional:file:../config/security-${spring.profiles.active}.yml[.yml],

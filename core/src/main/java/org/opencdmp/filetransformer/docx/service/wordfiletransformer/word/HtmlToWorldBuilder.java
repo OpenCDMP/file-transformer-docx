@@ -334,13 +334,13 @@ public class HtmlToWorldBuilder implements NodeVisitor {
         try {
             fixedUri = URI.create(uri);
         } catch (Exception e){
-            log.error(e.getMessage(), e);
+            log.warn("cannot create uri: " + uri);
         }
         if (fixedUri == null){
             try {
                 fixedUri = URI.create(uri.replace(" ", "%20"));
             } catch (Exception e){
-                log.error(e.getMessage(), e);
+                log.warn("cannot create uri: " + uri);
             }
         }
         if (fixedUri == null) return null;

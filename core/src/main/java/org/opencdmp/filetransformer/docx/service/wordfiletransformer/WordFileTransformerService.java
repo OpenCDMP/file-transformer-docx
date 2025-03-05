@@ -199,6 +199,7 @@ public class WordFileTransformerService implements FileTransformerClient {
         }
 
         this.wordBuilder.fillFooter(planEntity, null, document);
+        this.wordBuilder.fillHeader(planEntity, null, document);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         document.write(out);
@@ -218,12 +219,12 @@ public class WordFileTransformerService implements FileTransformerClient {
             }
         }
         
-        final boolean isFinalized = planEntity.getStatus() != null && planEntity.getStatus().equals(PlanStatus.Finalized);
+        final boolean isFinalized = planEntity.getStatus() != null && planEntity.getStatus().getInternalStatus() != null && planEntity.getStatus().getInternalStatus().equals(PlanStatus.Finalized);
         final boolean isPublic = planEntity.getPublicAfter() != null && planEntity.getPublicAfter().isAfter(Instant.now());
         
         List<DescriptionModel> descriptions = planEntity.getDescriptions() == null ? new ArrayList<>() : planEntity.getDescriptions().stream()
-                .filter(item -> item.getStatus() != DescriptionStatus.Canceled)
-                .filter(item -> !isPublic && !isFinalized || item.getStatus() == DescriptionStatus.Finalized)
+                .filter(item -> item.getStatus() != null && (item.getStatus().getInternalStatus() == null || (item.getStatus().getInternalStatus() != null && item.getStatus().getInternalStatus() != DescriptionStatus.Canceled )))
+                .filter(item -> !isPublic && !isFinalized || (item.getStatus().getInternalStatus() != null && item.getStatus().getInternalStatus() == DescriptionStatus.Finalized))
                 .filter(item -> item.getSectionId().equals(sectionModel.getId()))
                 .sorted(Comparator.comparing(DescriptionModel::getCreatedAt)).toList();
         
@@ -480,6 +481,7 @@ public class WordFileTransformerService implements FileTransformerClient {
 
         this.wordBuilder.fillFirstPage(planEntity, descriptionModel, document, true);
         this.wordBuilder.fillFooter(planEntity, descriptionModel, document);
+        this.wordBuilder.fillHeader(planEntity, descriptionModel, document);
 
         int powered_pos = this.wordBuilder.findPosOfPoweredBy(document);
         XWPFParagraph powered_par = null;

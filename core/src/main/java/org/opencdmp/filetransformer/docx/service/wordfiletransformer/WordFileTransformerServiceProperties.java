@@ -11,12 +11,11 @@ public class WordFileTransformerServiceProperties {
 	private String wordDescriptionTemplate;
 	private String organizationReferenceCode;
 	private String grantReferenceCode;
-	private String funderReferenceCode;
 	private String researcherReferenceCode;
 	private String licenceReferenceCode;
-	private String projectReferenceCode;
 	private String datasetReferenceCode;
 	private String publicationReferenceCode;
+	private String languages;
 
 	public String getTransformerId() {
 		return transformerId;
@@ -42,14 +41,6 @@ public class WordFileTransformerServiceProperties {
 		this.grantReferenceCode = grantReferenceCode;
 	}
 
-	public String getFunderReferenceCode() {
-		return funderReferenceCode;
-	}
-
-	public void setFunderReferenceCode(String funderReferenceCode) {
-		this.funderReferenceCode = funderReferenceCode;
-	}
-
 	public String getResearcherReferenceCode() {
 		return researcherReferenceCode;
 	}
@@ -64,14 +55,6 @@ public class WordFileTransformerServiceProperties {
 
 	public void setLicenceReferenceCode(String licenceReferenceCode) {
 		this.licenceReferenceCode = licenceReferenceCode;
-	}
-
-	public String getProjectReferenceCode() {
-		return projectReferenceCode;
-	}
-
-	public void setProjectReferenceCode(String projectReferenceCode) {
-		this.projectReferenceCode = projectReferenceCode;
 	}
 
 	public String getDatasetReferenceCode() {
@@ -120,5 +103,13 @@ public class WordFileTransformerServiceProperties {
 
 	public void setUseSharedStorage(boolean useSharedStorage) {
 		this.useSharedStorage = useSharedStorage;
+	}
+
+	public String getLanguages() {
+		return languages;
+	}
+
+	public void setLanguages(String languages) {
+		this.languages = languages;
 	}
 }
