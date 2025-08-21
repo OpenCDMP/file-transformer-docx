@@ -96,7 +96,7 @@ public class WordBuilderImpl implements WordBuilder {
             return paragraph;
         });
         this.optionsInTable.put(ParagraphStyle.HTML, (mainDocumentPart, item) -> {
-            Document htmlDoc = Jsoup.parse(((String) item).replaceAll("\n", "<br>"));
+            Document htmlDoc = Jsoup.parse(((String) item).replaceAll("<div.*?>", "\n").replaceAll("</div>", "").replaceAll("\n", "<br>"));
             HtmlToWorldBuilder htmlToWorldBuilder = HtmlToWorldBuilder.convertInTable(mainDocumentPart, htmlDoc, 0);
             return htmlToWorldBuilder.getParagraph();
         });

@@ -1,6 +1,9 @@
 package org.opencdmp.filetransformer.docx.service.wordfiletransformer;
 
+import org.opencdmp.commonmodels.models.ConfigurationField;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.List;
 
 @ConfigurationProperties(prefix = "word-file-transformer")
 public class WordFileTransformerServiceProperties {
@@ -16,6 +19,8 @@ public class WordFileTransformerServiceProperties {
 	private String datasetReferenceCode;
 	private String publicationReferenceCode;
 	private String languages;
+	private List<ConfigurationField> configurationFields;
+	private List<ConfigurationField> userConfigurationFields;
 
 	public String getTransformerId() {
 		return transformerId;
@@ -111,5 +116,21 @@ public class WordFileTransformerServiceProperties {
 
 	public void setLanguages(String languages) {
 		this.languages = languages;
+	}
+
+	public List<ConfigurationField> getConfigurationFields() {
+		return configurationFields;
+	}
+
+	public void setConfigurationFields(List<ConfigurationField> configurationFields) {
+		this.configurationFields = configurationFields;
+	}
+
+	public List<ConfigurationField> getUserConfigurationFields() {
+		return userConfigurationFields;
+	}
+
+	public void setUserConfigurationFields(List<ConfigurationField> userConfigurationFields) {
+		this.userConfigurationFields = userConfigurationFields;
 	}
 }

@@ -5,10 +5,12 @@ import gr.cite.tools.logging.LoggerService;
 import org.opencdmp.filetransformer.docx.model.Language;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.WordFileTransformerServiceProperties;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
-import org.springframework.util.ResourceUtils;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -18,8 +20,11 @@ public class LanguageServiceImpl implements LanguageService {
     private final WordFileTransformerServiceProperties properties;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private List<Language> languages = null;
-    public LanguageServiceImpl(WordFileTransformerServiceProperties properties) {
+    private final ResourceLoader resourceLoader;
+
+    public LanguageServiceImpl(WordFileTransformerServiceProperties properties, ResourceLoader resourceLoader) {
 	    this.properties = properties;
+        this.resourceLoader = resourceLoader;
     }
 
     @Override
@@ -27,7 +32,11 @@ public class LanguageServiceImpl implements LanguageService {
 
         if (languages != null) return languages;
         try {
-            languages = Arrays.asList(objectMapper.readValue(ResourceUtils.getFile(this.properties.getLanguages()), Language[].class));
+            Resource resource = this.resourceLoader.getResource(this.properties.getLanguages());
+            if(!resource.isReadable()) return new ArrayList<>();
+            try(InputStream inputStream = resource.getInputStream()) {
+                languages = Arrays.asList(objectMapper.readValue(inputStream, Language[].class));
+            }
         } catch (IOException e) {
             logger.error(e.getMessage(), e);
         }

@@ -2,7 +2,10 @@ package org.opencdmp.filetransformer.docx.service.wordfiletransformer;
 
 import gr.cite.tools.exception.MyApplicationException;
 import gr.cite.tools.logging.LoggerService;
+import org.apache.poi.util.Units;
+import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.opencdmp.commonmodels.enums.*;
+import org.opencdmp.commonmodels.models.ConfigurationField;
 import org.opencdmp.commonmodels.models.plan.PlanBlueprintValueModel;
 import org.opencdmp.commonmodels.models.plan.PlanContactModel;
 import org.opencdmp.commonmodels.models.plan.PlanModel;
@@ -11,8 +14,9 @@ import org.opencdmp.commonmodels.models.description.DescriptionModel;
 import org.opencdmp.commonmodels.models.descriptiotemplate.DescriptionTemplateModel;
 import org.opencdmp.commonmodels.models.planblueprint.*;
 import org.opencdmp.commonmodels.models.planreference.PlanReferenceModel;
+import org.opencdmp.commonmodels.models.plugin.PluginFieldModel;
+import org.opencdmp.commonmodels.models.plugin.PluginModel;
 import org.opencdmp.commonmodels.models.reference.ReferenceModel;
-import org.opencdmp.filetransformerbase.enums.FileTransformerEntityType;
 import org.opencdmp.filetransformerbase.interfaces.FileTransformerClient;
 import org.opencdmp.filetransformerbase.interfaces.FileTransformerConfiguration;
 import org.opencdmp.filetransformer.docx.model.enums.FileFormats;
@@ -29,10 +33,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
-import org.springframework.util.ResourceUtils;
 import org.springframework.web.context.annotation.RequestScope;
 
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import javax.management.InvalidApplicationException;
 import java.io.*;
 import java.math.BigInteger;
@@ -41,6 +49,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
+
+import static org.apache.poi.xwpf.usermodel.Document.*;
+import static org.apache.poi.xwpf.usermodel.Document.PICTURE_TYPE_WMF;
 
 @Component
 @RequestScope
@@ -51,23 +63,37 @@ public class WordFileTransformerService implements FileTransformerClient {
             new FileFormat(FileFormats.PDF.getValue(), true, "fa-file-pdf-o"),
             new FileFormat(FileFormats.DOCX.getValue(), true, "fa-file-word-o"));
 
-    private final static List<FileTransformerEntityType> FILE_TRANSFORMER_ENTITY_TYPES = List.of(
-            FileTransformerEntityType.Plan, FileTransformerEntityType.Description);
+    private final static List<PluginEntityType> FILE_TRANSFORMER_ENTITY_TYPES = List.of(
+            PluginEntityType.Plan, PluginEntityType.Description);
 
+    private static final Map<String, Integer> IMAGE_TYPE_MAP = Map.of(
+            "image/jpeg", PICTURE_TYPE_JPEG,
+            "image/png", PICTURE_TYPE_PNG,
+            "image/gif", PICTURE_TYPE_GIF,
+            "image/tiff", PICTURE_TYPE_TIFF,
+            "image/bmp", PICTURE_TYPE_BMP,
+            "image/wmf", PICTURE_TYPE_WMF
+    );
+    private Integer imageCount;
+    private final FileStorageService fileStorageService;
     private final WordFileTransformerServiceProperties wordFileTransformerServiceProperties;
     private final PdfService pdfService;
     private final WordBuilder wordBuilder;
     private final FileStorageService storageService;
     private final MessageSource messageSource;
+    private final ResourceLoader resourceLoader;
     @Autowired
     public WordFileTransformerService(
-		    WordFileTransformerServiceProperties wordFileTransformerServiceProperties,
-		    PdfService pdfService, WordBuilder wordBuilder, FileStorageService storageService, MessageSource messageSource) {
-	    this.wordFileTransformerServiceProperties = wordFileTransformerServiceProperties;
+            FileStorageService fileStorageService, WordFileTransformerServiceProperties wordFileTransformerServiceProperties,
+            PdfService pdfService, WordBuilder wordBuilder, FileStorageService storageService, MessageSource messageSource, ResourceLoader resourceLoader) {
+        this.fileStorageService = fileStorageService;
+        this.wordFileTransformerServiceProperties = wordFileTransformerServiceProperties;
 	    this.pdfService = pdfService;
 	    this.wordBuilder = wordBuilder;
 	    this.storageService = storageService;
 	    this.messageSource = messageSource;
+        this.resourceLoader = resourceLoader;
+        this.imageCount = 0;
     }
 
     @Override
@@ -137,6 +163,8 @@ public class WordFileTransformerService implements FileTransformerClient {
         configuration.setImportVariants(null);
         configuration.setExportEntityTypes(FILE_TRANSFORMER_ENTITY_TYPES);
         configuration.setUseSharedStorage(this.wordFileTransformerServiceProperties.isUseSharedStorage());
+        configuration.setConfigurationFields(this.wordFileTransformerServiceProperties.getConfigurationFields());
+        configuration.setUserConfigurationFields(this.wordFileTransformerServiceProperties.getUserConfigurationFields());
         return configuration;
     }
 
@@ -170,7 +198,22 @@ public class WordFileTransformerService implements FileTransformerClient {
         if (planBlueprintModel.getDefinition() == null) throw new MyApplicationException("PlanBlueprint Definition required");
         if (planBlueprintModel.getDefinition().getSections() == null) throw new MyApplicationException("PlanBlueprint Section required");
 
-        XWPFDocument document = new XWPFDocument(new FileInputStream(ResourceUtils.getFile(this.wordFileTransformerServiceProperties.getWordPlanTemplate())));
+
+        XWPFDocument document = null;
+        if (planBlueprintModel.getDefinition().getPlugins() != null && !planBlueprintModel.getDefinition().getPlugins().isEmpty()) {
+            document = this.getCustomDocument(planBlueprintModel.getDefinition().getPlugins(), PluginEntityType.Plan);
+        }
+        if (document == null) {
+            try {
+                Resource resource = resourceLoader.getResource(this.wordFileTransformerServiceProperties.getWordPlanTemplate());
+                try(InputStream inputStream = resource.getInputStream()) {
+                    document = new XWPFDocument(inputStream);
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage(), e);
+                throw new RuntimeException(e);
+            }
+        }
 
         this.wordBuilder.fillFirstPage(planEntity, null, document, false);
 
@@ -311,7 +354,10 @@ public class WordFileTransformerService implements FileTransformerClient {
             case Extra -> buildPlanSectionExtraField(planEntity, document, (ExtraFieldModel) fieldModel);
             case ReferenceType -> {
                 buildPlanSectionReferenceTypeField(planEntity, document, (ReferenceTypeFieldModel) fieldModel);
-            }  
+            }
+            case Upload -> {
+                buildPlanSectionUploadField(planEntity, document, (UploadFieldModel) fieldModel);
+            }
             default -> throw new MyApplicationException("Invalid type " + fieldModel.getCategory());
         }
     }
@@ -337,6 +383,104 @@ public class WordFileTransformerService implements FileTransformerClient {
             if (this.wordFileTransformerServiceProperties.getLicenceReferenceCode().equalsIgnoreCase(referenceField.getReferenceType().getCode())) runResearcher.setText(reference.getReference());
             else runResearcher.setText(reference.getLabel());
             runResearcher.setColor("116a78");
+        }
+    }
+
+    private void buildPlanSectionUploadField(PlanModel planEntity, XWPFDocument document, UploadFieldModel uploadFieldModel) {
+        if (uploadFieldModel == null) throw new MyApplicationException("UploadFieldModel required");
+
+        XWPFParagraph uploadFieldParagraph = document.createParagraph();
+        uploadFieldParagraph.setSpacingBetween(1.0);
+        XWPFRun runUploadFieldLabel = uploadFieldParagraph.createRun();
+        runUploadFieldLabel.setText(uploadFieldModel.getLabel() + ": ");
+        runUploadFieldLabel.setColor("000000");
+
+        PlanBlueprintValueModel planBlueprintValueModel = planEntity.getProperties() != null && planEntity.getProperties().getPlanBlueprintValues() != null ? planEntity.getProperties().getPlanBlueprintValues().stream().filter(x -> uploadFieldModel.getId().equals(x.getFieldId())).findFirst().orElse(null) : null;
+        if (planBlueprintValueModel != null && planBlueprintValueModel.getValue() != null && !planBlueprintValueModel.getValue().isBlank()) {
+            XWPFParagraph paragraph = document.createParagraph();
+            paragraph.setPageBreak(true);
+            paragraph.setSpacingAfter(0);
+            paragraph.setAlignment(ParagraphAlignment.CENTER); //GK: Center the image if it is too small
+            XWPFRun run = paragraph.createRun();
+            FileEnvelopeModel itemTyped = planBlueprintValueModel.getFile();
+            if (itemTyped == null) return;
+            try {
+
+                String fileName = itemTyped.getFilename();
+                String fileType = itemTyped.getMimeType();
+                if (IMAGE_TYPE_MAP.containsKey(fileType)) {
+                    int format;
+                    format = IMAGE_TYPE_MAP.getOrDefault(fileType, 0);
+                    byte[] file;
+                    if (this.wordFileTransformerServiceProperties.isUseSharedStorage() && itemTyped.getFileRef() != null && !itemTyped.getFileRef().isBlank()) {
+                        file = this.fileStorageService.readFile(itemTyped.getFileRef());
+                    } else {
+                        file = itemTyped.getFile();
+                    }
+                    InputStream image = new ByteArrayInputStream(file);
+                    ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(file));
+                    Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+                    if (readers.hasNext()) {
+                        ImageReader reader = readers.next();
+                        reader.setInput(iis);
+
+                        int initialImageWidth = reader.getWidth(0);
+                        int initialImageHeight = reader.getHeight(0);
+
+                        float ratio = initialImageHeight / (float) initialImageWidth;
+
+                        int marginLeftInDXA = this.toIntFormBigInteger(document.getDocument().getBody().getSectPr().getPgMar().getLeft());
+                        int marginRightInDXA = this.toIntFormBigInteger(document.getDocument().getBody().getSectPr().getPgMar().getRight());
+                        int pageWidthInDXA = this.toIntFormBigInteger(document.getDocument().getBody().getSectPr().getPgSz().getW());
+                        int pageWidth = Math.round((pageWidthInDXA - marginLeftInDXA - marginRightInDXA) / (float) 20); // /20 converts dxa to points
+
+                        int imageWidth = Math.round(initialImageWidth * (float) 0.75);    // *0.75 converts pixels to points
+                        int width = Math.min(imageWidth, pageWidth);
+
+                        int marginTopInDXA =  this.toIntFormBigInteger(document.getDocument().getBody().getSectPr().getPgMar().getTop());
+                        int marginBottomInDXA = this.toIntFormBigInteger(document.getDocument().getBody().getSectPr().getPgMar().getBottom());
+                        int pageHeightInDXA = this.toIntFormBigInteger(document.getDocument().getBody().getSectPr().getPgSz().getH());
+                        int pageHeight = Math.round((pageHeightInDXA - marginTopInDXA - marginBottomInDXA) / (float) 20);    // /20 converts dxa to points
+
+                        int imageHeight = Math.round(initialImageHeight * ((float) 0.75));  // *0.75 converts pixels to points
+
+                        int height = Math.round(width * ratio);
+                        if (height > pageHeight) {
+                            // height calculated with ratio is too large. Image may have Portrait (vertical) orientation. Recalculate image dimensions.
+                            height = Math.min(imageHeight, pageHeight);
+                            width = Math.round(height / ratio);
+                        }
+
+                        run.addPicture(image, format, fileName, Units.toEMU(width), Units.toEMU(height));
+                        paragraph.setPageBreak(false);
+                        imageCount++;
+                        XWPFParagraph captionParagraph = document.createParagraph();
+                        captionParagraph.setAlignment(ParagraphAlignment.CENTER);
+                        captionParagraph.setSpacingBefore(0);
+                        captionParagraph.setStyle("Caption");
+                        XWPFRun captionRun = captionParagraph.createRun();
+                        captionRun.setText("Image " + imageCount);
+                    }
+                } else {
+                    if(planBlueprintValueModel.getFile() != null && planBlueprintValueModel.getFile().getFilename() != null && !planBlueprintValueModel.getFile().getFilename().isBlank()) {
+                        XWPFRun runUploadFieldInput = uploadFieldParagraph.createRun();
+                        runUploadFieldInput.setText(planBlueprintValueModel.getFile().getFilename());
+                        runUploadFieldInput.setColor("116a78");
+                    }
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage(), e);
+            }
+        }
+    }
+
+    private int toIntFormBigInteger(Object object){
+        try {
+            if (object instanceof BigInteger) return ((BigInteger) object).intValue();
+            return (int) object;
+        } catch (Exception e){
+            logger.error(e.getMessage(), e);
+            return 0;
         }
     }
 
@@ -477,7 +621,22 @@ public class WordFileTransformerService implements FileTransformerClient {
         if (descriptionModel == null) throw new MyApplicationException("DescriptionEntity required");
         PlanModel planEntity = descriptionModel.getPlan();
         if (planEntity == null)  throw new MyApplicationException("plan is invalid");
-        XWPFDocument document = new XWPFDocument(new FileInputStream(ResourceUtils.getFile(this.wordFileTransformerServiceProperties.getWordDescriptionTemplate())));
+
+        XWPFDocument document = null;
+        if (descriptionModel.getDescriptionTemplate() != null && descriptionModel.getDescriptionTemplate().getDefinition().getPlugins() != null && !descriptionModel.getDescriptionTemplate().getDefinition().getPlugins().isEmpty()) {
+            document = this.getCustomDocument(descriptionModel.getDescriptionTemplate().getDefinition().getPlugins(), PluginEntityType.Description);
+        }
+        if (document == null) {
+            try {
+                Resource resource = resourceLoader.getResource(this.wordFileTransformerServiceProperties.getWordDescriptionTemplate());
+                try(InputStream inputStream = resource.getInputStream()) {
+                    document = new XWPFDocument(inputStream);
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage(), e);
+                throw new RuntimeException(e);
+            }
+        }
 
         this.wordBuilder.fillFirstPage(planEntity, descriptionModel, document, true);
         this.wordBuilder.fillFooter(planEntity, descriptionModel, document);
@@ -518,5 +677,29 @@ public class WordFileTransformerService implements FileTransformerClient {
         String fileName = descriptionModel.getLabel().replaceAll("[^a-zA-Z0-9+ ]", "");
         
         return fileName + extension;
+    }
+
+    private XWPFDocument getCustomDocument(List<PluginModel> plugins, PluginEntityType entityType) {
+        try {
+            if (plugins != null && !plugins.isEmpty()) {
+                PluginModel plugin = plugins.stream().filter(x -> x.getCode().equals(this.wordFileTransformerServiceProperties.getTransformerId()) && x.getType().equals(PluginType.FileTransformer)).findFirst().orElse(null);
+                if (plugin != null && plugin.getFields() != null) {
+                    if (this.wordFileTransformerServiceProperties.getConfigurationFields() != null) {
+                        List<ConfigurationField> filteredConfigurationFields = this.wordFileTransformerServiceProperties.getConfigurationFields().stream().filter(x -> x.getAppliesTo() != null && x.getAppliesTo().contains(entityType)).toList();
+                        if (!filteredConfigurationFields.isEmpty()) {
+                            PluginFieldModel field = plugin.getFields().stream().filter(y -> y.getFile() != null && filteredConfigurationFields.stream().map(ConfigurationField::getCode).toList().contains(y.getCode())).findFirst().orElse(null);
+                            if (field != null && field.getFile() != null && field.getFile().getFile() != null) {
+                                return new XWPFDocument(new ByteArrayInputStream(field.getFile().getFile()));
+                            }
+                        }
+                    }
+
+                }
+            }
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            logger.warn("error creating custom document.. fallback to default. Entity type: " + entityType);
+        }
+        return null;
     }
 }
