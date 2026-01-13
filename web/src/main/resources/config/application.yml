@@ -10,5 +10,5 @@ spring:
       optional:classpath:config/logging.yml[.yml], optional:classpath:config/logging-${spring.profiles.active}.yml[.yml], optional:file:../config/logging-${spring.profiles.active}.yml[.yml],
       optional:classpath:config/word-file-transformer.yml[.yml], optional:classpath:config/word-file-transformer-${spring.profiles.active}.yml[.yml], optional:file:../config/word-file-transformer-${spring.profiles.active}.yml[.yml],
       optional:classpath:config/pdf.yml[.yml], optional:classpath:config/pdf-${spring.profiles.active}.yml[.yml], optional:file:../config/pdf-${spring.profiles.active}.yml[.yml],
-      optional:classpath:config/idpclaims.yml[.yml], optional:classpath:config/idpclaims-${spring.profiles.active}.yml[.yml], optional:file:../config/idpclaims-${spring.profiles.active}.yml[.yml]
-
+      optional:classpath:config/idpclaims.yml[.yml], optional:classpath:config/idpclaims-${spring.profiles.active}.yml[.yml], optional:file:../config/idpclaims-${spring.profiles.active}.yml[.yml],
+      optional:classpath:config/management.yml[.yml], optional:classpath:config/management-${spring.profiles.active}.yml[.yml], optional:file:../config/management-${spring.profiles.active}.yml[.yml]
