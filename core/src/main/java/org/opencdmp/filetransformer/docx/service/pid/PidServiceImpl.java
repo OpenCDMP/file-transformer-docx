@@ -1,6 +1,5 @@
 package org.opencdmp.filetransformer.docx.service.pid;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import gr.cite.tools.logging.LoggerService;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.WordFileTransformerServiceProperties;
 import org.opencdmp.filetransformer.docx.model.PidLink;
@@ -8,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.InputStream;

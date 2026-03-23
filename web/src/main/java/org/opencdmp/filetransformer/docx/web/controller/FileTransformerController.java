@@ -35,7 +35,7 @@ public class FileTransformerController implements org.opencdmp.filetransformerba
 	    this.auditService = auditService;
     }
 
-    public FileEnvelopeModel exportPlan(@RequestBody PlanModel planDepositModel, @RequestParam(value = "format",required = false)String format) throws Exception {
+    public FileEnvelopeModel exportPlan(@RequestBody PlanModel planDepositModel, @RequestParam(value = "format",required = false)String format) {
         logger.debug(new MapLogEntry("exportPlan " + PlanModel.class.getSimpleName()).And("planDepositModel", planDepositModel).And("format", format));
 
         FileEnvelopeModel model = fileTransformerExecutor.exportPlan(planDepositModel, format);
@@ -47,7 +47,7 @@ public class FileTransformerController implements org.opencdmp.filetransformerba
         return model;
     }
 
-    public FileEnvelopeModel exportDescription(@RequestBody DescriptionModel descriptionModel, @RequestParam(value = "format",required = false)String format) throws Exception {
+    public FileEnvelopeModel exportDescription(@RequestBody DescriptionModel descriptionModel, @RequestParam(value = "format",required = false)String format) {
         logger.debug(new MapLogEntry("exportDescription " + DescriptionModel.class.getSimpleName()).And("descriptionModel", descriptionModel).And("format", format));
 
         FileEnvelopeModel model = fileTransformerExecutor.exportDescription(descriptionModel, format);

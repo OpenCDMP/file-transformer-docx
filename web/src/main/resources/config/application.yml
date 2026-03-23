@@ -1,4 +1,6 @@
 spring:
+  application:
+    name: opencdmp-file-transformer-docx-api
   jackson:
     default-property-inclusion: non_null
   config:

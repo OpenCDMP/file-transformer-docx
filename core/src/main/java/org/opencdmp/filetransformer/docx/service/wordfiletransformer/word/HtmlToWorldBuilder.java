@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigInteger;
 import java.net.URI;
-import java.net.URL;
 import java.util.function.Predicate;
 import java.util.*;
 
@@ -32,10 +31,10 @@ public class HtmlToWorldBuilder implements NodeVisitor {
     private BigInteger numberingLevel;
     private XmlCursor cursor;
 
-    public static HtmlToWorldBuilder convertInTable(XWPFTableCell document, Document htmlDocument, float indentation) {
+    public static HtmlToWorldBuilder convertInTable(XWPFTableCell document, Document htmlDocument, float indentation, XmlCursor cursor) {
         XWPFParagraph paragraph = document.addParagraph();
         paragraph.setIndentFromLeft(Math.round(400 * indentation));
-        HtmlToWorldBuilder htmlToWorldBuilder = new HtmlToWorldBuilder(paragraph, indentation, null);
+        HtmlToWorldBuilder htmlToWorldBuilder = new HtmlToWorldBuilder(paragraph, indentation, cursor);
         NodeTraversor.traverse(htmlToWorldBuilder, htmlDocument);
         return htmlToWorldBuilder;
     }
@@ -46,6 +45,12 @@ public class HtmlToWorldBuilder implements NodeVisitor {
         HtmlToWorldBuilder htmlToWorldBuilder = new HtmlToWorldBuilder(paragraph, indentation, null);
         NodeTraversor.traverse(htmlToWorldBuilder, htmlDocument);
         return htmlToWorldBuilder;
+    }
+
+    public static void convertWihExistingParagraph(XWPFParagraph paragraph, Document htmlDocument, float indentation, XmlCursor cursor) {
+        paragraph.setIndentFromLeft(Math.round(400 * indentation));
+        HtmlToWorldBuilder htmlToWorldBuilder = new HtmlToWorldBuilder(paragraph, indentation, cursor);
+        NodeTraversor.traverse(htmlToWorldBuilder, htmlDocument);
     }
 
     public HtmlToWorldBuilder(XWPFParagraph paragraph, float indentation, XmlCursor cursor) {

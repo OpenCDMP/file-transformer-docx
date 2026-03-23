@@ -1,7 +1,6 @@
 package org.opencdmp.filetransformer.docx.service.wordfiletransformer.word;
 
 import gr.cite.tools.exception.MyApplicationException;
-import org.apache.fop.render.intermediate.util.IFConcatenator;
 import org.opencdmp.commonmodels.enums.FieldType;
 import org.opencdmp.commonmodels.models.FileEnvelopeModel;
 import org.opencdmp.commonmodels.models.PlanUserModel;
@@ -16,6 +15,7 @@ import org.opencdmp.commonmodels.models.plan.PlanModel;
 import org.opencdmp.commonmodels.models.planreference.PlanReferenceModel;
 import org.opencdmp.commonmodels.models.reference.ReferenceFieldModel;
 import org.opencdmp.commonmodels.models.reference.ReferenceModel;
+import org.opencdmp.filetransformer.docx.model.DescriptionValue;
 import org.opencdmp.filetransformer.docx.model.Language;
 import org.opencdmp.filetransformer.docx.service.language.LanguageService;
 import org.opencdmp.filetransformer.docx.service.storage.FileStorageService;
@@ -62,6 +62,10 @@ public class WordBuilderImpl implements WordBuilder {
             "image/bmp", PICTURE_TYPE_BMP,
             "image/wmf", PICTURE_TYPE_WMF
     );
+
+    private static final String REFERENCE_TYPE_FIELD_CODE_KEY = "key";
+    private static final String REFERENCE_TYPE_FIELD_CODE_REFERENCE_TYPE = "referenceType";
+
     private BigInteger numId;
     private Integer indent;
     private Integer imageCount;
@@ -69,26 +73,29 @@ public class WordBuilderImpl implements WordBuilder {
     private final FileStorageService fileStorageService;
     private final WordFileTransformerServiceProperties wordFileTransformerServiceProperties;
     private final PidService pidService;
-    private final Map<ParagraphStyle, ApplierWithValue<XWPFDocument, Object, XWPFParagraph>> options = new HashMap<>();
     private final Map<ParagraphStyle, ApplierWithValue<XWPFTableCell, Object, XWPFParagraph>> optionsInTable = new HashMap<>();
+    private final Map<ParagraphStyle, ApplierWithValue<XWPFParagraph, Object, Void>> optionsWithCursor = new HashMap<>();
     private final LanguageService languageService;
 
     public WordBuilderImpl(FileStorageService fileStorageService, WordFileTransformerServiceProperties wordFileTransformerServiceProperties, PidService pidService, LanguageService languageService) {
-	    this.fileStorageService = fileStorageService;
-	    this.wordFileTransformerServiceProperties = wordFileTransformerServiceProperties;
+        this.fileStorageService = fileStorageService;
+        this.wordFileTransformerServiceProperties = wordFileTransformerServiceProperties;
         this.pidService = pidService;
         this.languageService = languageService;
         this.cTAbstractNum = CTAbstractNum.Factory.newInstance();
         this.cTAbstractNum.setAbstractNumId(BigInteger.valueOf(1));
         this.indent = 0;
         this.imageCount = 0;
-        this.buildOptions();
         this.buildOptionsInTable();
+        this.buildOptionsWithCursor();
     }
 
     private void buildOptionsInTable() {
         this.optionsInTable.put(ParagraphStyle.TEXT, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.addParagraph();
+            XmlCursor cursor = mainDocumentPart.getCTTc().newCursor();
+            cursor.toEndToken();
+
+            XWPFParagraph paragraph = mainDocumentPart.insertNewParagraph(cursor);
             XWPFRun run = paragraph.createRun();
             if (item != null)
                 run.setText("" + item);
@@ -97,11 +104,15 @@ public class WordBuilderImpl implements WordBuilder {
         });
         this.optionsInTable.put(ParagraphStyle.HTML, (mainDocumentPart, item) -> {
             Document htmlDoc = Jsoup.parse(((String) item).replaceAll("<div.*?>", "\n").replaceAll("</div>", "").replaceAll("\n", "<br>"));
-            HtmlToWorldBuilder htmlToWorldBuilder = HtmlToWorldBuilder.convertInTable(mainDocumentPart, htmlDoc, 0);
+            HtmlToWorldBuilder htmlToWorldBuilder = HtmlToWorldBuilder.convertInTable(mainDocumentPart, htmlDoc, 0, mainDocumentPart.getCTTc().newCursor());
             return htmlToWorldBuilder.getParagraph();
         });
         this.optionsInTable.put(ParagraphStyle.TITLE, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.addParagraph();
+
+            XmlCursor cursor = mainDocumentPart.getCTTc().newCursor();
+            cursor.toEndToken();
+
+            XWPFParagraph paragraph = mainDocumentPart.insertNewParagraph(cursor);
             paragraph.setStyle("Title");
             paragraph.setAlignment(ParagraphAlignment.CENTER);
             XWPFRun run = paragraph.createRun();
@@ -111,103 +122,107 @@ public class WordBuilderImpl implements WordBuilder {
             return paragraph;
         });
         this.optionsInTable.put(ParagraphStyle.IMAGE, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.addParagraph();
+
+            XmlCursor cursor = mainDocumentPart.getCTTc().newCursor();
+            cursor.toEndToken();
+
+            XWPFParagraph paragraph = mainDocumentPart.insertNewParagraph(cursor);
             XWPFRun run = paragraph.createRun();
             if (item instanceof FileEnvelopeModel)
-                run.setText(((FileEnvelopeModel)item).getFilename());
+                run.setText(((FileEnvelopeModel) item).getFilename());
             run.setFontSize(11);
             run.setItalic(true);
             return paragraph;
         });
     }
 
-    private void buildOptions() {
-        this.options.put(ParagraphStyle.TEXT, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+    private void buildOptionsWithCursor() {
+        this.optionsWithCursor.put(ParagraphStyle.TEXT, (paragraph, item) -> {
             XWPFRun run = paragraph.createRun();
             if (item != null)
                 run.setText("" + item);
             run.setFontSize(11);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HTML, (mainDocumentPart, item) -> {
+
+        this.optionsWithCursor.put(ParagraphStyle.HTML, (paragraph, item) -> {
             Document htmlDoc = Jsoup.parse(((String) item).replaceAll("\n", "<br>"));
-            HtmlToWorldBuilder htmlToWorldBuilder = HtmlToWorldBuilder.convert(mainDocumentPart, htmlDoc, this.indent);
-            return htmlToWorldBuilder.getParagraph();
+            HtmlToWorldBuilder.convertWihExistingParagraph(paragraph, htmlDoc, this.indent, paragraph.getCTP().newCursor());
+            return null;
         });
-        this.options.put(ParagraphStyle.TITLE, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.TITLE, (paragraph, item) -> {
             paragraph.setStyle("Title");
             paragraph.setAlignment(ParagraphAlignment.CENTER);
             XWPFRun run = paragraph.createRun();
             run.setText((String) item);
             run.setBold(true);
             run.setFontSize(14);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HEADER1, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.HEADER1, (paragraph, item) -> {
             paragraph.setStyle("Heading1");
             XWPFRun run = paragraph.createRun();
             run.setText((String) item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HEADER2, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.HEADER2, (paragraph, item) -> {
             paragraph.setStyle("Heading2");
             XWPFRun run = paragraph.createRun();
             run.setText("" + item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HEADER3, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.HEADER3, (paragraph, item) -> {
             paragraph.setStyle("Heading3");
             XWPFRun run = paragraph.createRun();
             run.setText("" + item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HEADER4, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.HEADER4, (paragraph, item) -> {
             paragraph.setStyle("Heading4");
             XWPFRun run = paragraph.createRun();
             run.setText((String) item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HEADER5, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.HEADER5, (paragraph, item) -> {
             paragraph.setStyle("Heading5");
             XWPFRun run = paragraph.createRun();
             run.setText("" + item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.HEADER6, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.HEADER6, (paragraph, item) -> {
             paragraph.setStyle("Heading6");
             XWPFRun run = paragraph.createRun();
             run.setText("" + item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.FOOTER, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.FOOTER, (paragraph, item) -> {
             XWPFRun run = paragraph.createRun();
             run.setText((String) item);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.COMMENT, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.COMMENT, (paragraph, item) -> {
             XWPFRun run = paragraph.createRun();
             run.setText("" + item);
             run.setItalic(true);
-            return paragraph;
+            return null;
         });
-        this.options.put(ParagraphStyle.IMAGE, (mainDocumentPart, item) -> {
-            XWPFParagraph paragraph = mainDocumentPart.createParagraph();
+
+        this.optionsWithCursor.put(ParagraphStyle.IMAGE, (paragraph, item) -> {
             paragraph.setPageBreak(true);
             paragraph.setSpacingAfter(0);
             paragraph.setAlignment(ParagraphAlignment.CENTER); //GK: Center the image if it is too small
             XWPFRun run = paragraph.createRun();
-            FileEnvelopeModel itemTyped = (FileEnvelopeModel)item;
-            if (itemTyped == null) return paragraph;
+            FileEnvelopeModel itemTyped = (FileEnvelopeModel) item;
+            if (itemTyped == null) return null;
             try {
 
                 String fileName = itemTyped.getFilename();
@@ -232,6 +247,8 @@ public class WordBuilderImpl implements WordBuilder {
 
                     float ratio = initialImageHeight / (float) initialImageWidth;
 
+                    XWPFDocument mainDocumentPart = paragraph.getDocument();
+
                     int marginLeftInDXA = this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgMar().getLeft());
                     int marginRightInDXA = this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgMar().getRight());
                     int pageWidthInDXA = this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgSz().getW());
@@ -240,7 +257,7 @@ public class WordBuilderImpl implements WordBuilder {
                     int imageWidth = Math.round(initialImageWidth * (float) 0.75);    // *0.75 converts pixels to points
                     int width = Math.min(imageWidth, pageWidth);
 
-                    int marginTopInDXA =  this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgMar().getTop());
+                    int marginTopInDXA = this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgMar().getTop());
                     int marginBottomInDXA = this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgMar().getBottom());
                     int pageHeightInDXA = this.toIntFormBigInteger(mainDocumentPart.getDocument().getBody().getSectPr().getPgSz().getH());
                     int pageHeight = Math.round((pageHeightInDXA - marginTopInDXA - marginBottomInDXA) / (float) 20);    // /20 converts dxa to points
@@ -257,7 +274,9 @@ public class WordBuilderImpl implements WordBuilder {
                     run.addPicture(image, format, fileName, Units.toEMU(width), Units.toEMU(height));
                     paragraph.setPageBreak(false);
                     imageCount++;
-                    XWPFParagraph captionParagraph = mainDocumentPart.createParagraph();
+
+                    XmlCursor cursor = paragraph.getCTP().newCursor();
+                    XWPFParagraph captionParagraph = mainDocumentPart.insertNewParagraph(cursor);
                     captionParagraph.setAlignment(ParagraphAlignment.CENTER);
                     captionParagraph.setSpacingBefore(0);
                     captionParagraph.setStyle("Caption");
@@ -268,59 +287,59 @@ public class WordBuilderImpl implements WordBuilder {
             } catch (Exception e) {
                 logger.error(e.getMessage(), e);
             }
-            return paragraph;
+            return null;
         });
     }
-    
-    private int toIntFormBigInteger(Object object){
+
+    private int toIntFormBigInteger(Object object) {
         try {
             if (object instanceof BigInteger) return ((BigInteger) object).intValue();
             return (int) object;
-        } catch (Exception e){
+        } catch (Exception e) {
             logger.error(e.getMessage(), e);
             return 0;
         }
     }
 
     @Override
-    public void build(XWPFDocument document, DescriptionTemplateModel descriptionTemplate, PropertyDefinitionModel propertyDefinitionModel, VisibilityService visibilityService) {
-        createPages(descriptionTemplate.getDefinition().getPages(), propertyDefinitionModel, document, visibilityService);
+    public void build(XWPFDocument document, DescriptionTemplateModel descriptionTemplate, PropertyDefinitionModel propertyDefinitionModel, VisibilityService visibilityService, XWPFParagraph paragraphCursor) {
+        createPages(descriptionTemplate.getDefinition().getPages(), propertyDefinitionModel, document, visibilityService, paragraphCursor);
     }
 
-    private void createPages(List<PageModel> datasetProfilePages, PropertyDefinitionModel propertyDefinitionModel, XWPFDocument mainDocumentPart, VisibilityService visibilityService) {
-	    for (PageModel item : datasetProfilePages) {
-                if (item.getSections() != null) {
-                    try {
-                        XWPFParagraph paragraph = addParagraphContent(item.getOrdinal() + 1 + " " + item.getTitle(), mainDocumentPart, ParagraphStyle.HEADER5, numId, 0);
-                        mainDocumentPart.getPosOfParagraph(paragraph);
-                        if (visibilityService.isVisible(item.getId(), null)) {
-                            createSections(item.getSections(), propertyDefinitionModel, mainDocumentPart, 1, false, item.getOrdinal() + 1, null, visibilityService);
-                        }
-                    } catch (Exception e) {
-                        logger.error(e.getMessage(), e);
+    private void createPages(List<PageModel> datasetProfilePages, PropertyDefinitionModel propertyDefinitionModel, XWPFDocument mainDocumentPart, VisibilityService visibilityService, XWPFParagraph paragraphCursor) {
+        for (PageModel item : datasetProfilePages) {
+            if (item.getSections() != null) {
+                try {
+                    XWPFParagraph paragraph = addParagraphContent(item.getOrdinal() + 1 + " " + item.getTitle(), mainDocumentPart, ParagraphStyle.HEADER5, numId, 0, paragraphCursor.getCTP().newCursor(), false, false, null, null);
+                    mainDocumentPart.getPosOfParagraph(paragraph);
+                    if (visibilityService.isVisible(item.getId(), null)) {
+                        createSections(item.getSections(), propertyDefinitionModel, mainDocumentPart, 1, false, item.getOrdinal() + 1, null, visibilityService, paragraphCursor);
                     }
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
                 }
             }
+        }
     }
 
-    private boolean createSections(List<SectionModel> sections, PropertyDefinitionModel propertyDefinitionModel, XWPFDocument mainDocumentPart, Integer indent, Boolean createListing, Integer page, String sectionString, VisibilityService visibilityService) {
+    private boolean createSections(List<SectionModel> sections, PropertyDefinitionModel propertyDefinitionModel, XWPFDocument mainDocumentPart, Integer indent, Boolean createListing, Integer page, String sectionString, VisibilityService visibilityService, XWPFParagraph paragraphCursor) {
         if (createListing) this.addListing(indent, false, true);
         boolean hasAnySectionValue = false;
-        
+
         for (SectionModel section : sections) {
             if (!visibilityService.isVisible(section.getId(), null)) continue;
             boolean hasValue = false;
             int paragraphPos = -1;
             String tempSectionString = sectionString != null ? sectionString + "." + (section.getOrdinal() + 1) : "" + (section.getOrdinal() + 1);
             if (!createListing) {
-                XWPFParagraph paragraph = addParagraphContent(page + "." + tempSectionString + " " + section.getTitle(), mainDocumentPart, ParagraphStyle.HEADER5, numId, indent);
+                XWPFParagraph paragraph = addParagraphContent(page + "." + tempSectionString + " " + section.getTitle(), mainDocumentPart, ParagraphStyle.HEADER5, numId, indent, paragraphCursor.getCTP().newCursor(), false, false, null, null);
                 paragraphPos = mainDocumentPart.getPosOfParagraph(paragraph);
             }
             if (section.getSections() != null) {
-                hasValue = createSections(section.getSections(), propertyDefinitionModel, mainDocumentPart, indent + 1, createListing, page, tempSectionString, visibilityService);
+                hasValue = createSections(section.getSections(), propertyDefinitionModel, mainDocumentPart, indent + 1, createListing, page, tempSectionString, visibilityService, paragraphCursor);
             }
             if (section.getFieldSets() != null) {
-                hasValue = createFieldSetFields(section.getFieldSets(), propertyDefinitionModel, mainDocumentPart, indent + 1, createListing, page, tempSectionString, visibilityService);
+                hasValue = createFieldSetFields(section.getFieldSets(), propertyDefinitionModel, mainDocumentPart, indent + 1, createListing, page, tempSectionString, visibilityService, paragraphCursor);
             }
 
             if (!hasValue && paragraphPos > -1) {
@@ -328,12 +347,12 @@ public class WordBuilderImpl implements WordBuilder {
             }
             hasAnySectionValue = hasAnySectionValue || hasValue;
         }
-        
+
         return hasAnySectionValue;
     }
 
 
-    private Boolean createFieldSetFields(List<FieldSetModel> fieldSetModels, PropertyDefinitionModel propertyDefinitionModel, XWPFDocument mainDocumentPart, Integer indent, Boolean createListing, Integer page, String section, VisibilityService visibilityService) {
+    private Boolean createFieldSetFields(List<FieldSetModel> fieldSetModels, PropertyDefinitionModel propertyDefinitionModel, XWPFDocument mainDocumentPart, Integer indent, Boolean createListing, Integer page, String section, VisibilityService visibilityService, XWPFParagraph paragraphCursor) {
         if (createListing) this.addListing(indent, true, true);
         boolean hasValue = false;
         boolean returnedValue = false;
@@ -350,12 +369,12 @@ public class WordBuilderImpl implements WordBuilder {
                 int paragraphPos = -1;
                 int paragraphPosInner = -1;
                 if (fieldSetModel.getTitle() != null && !fieldSetModel.getTitle().isEmpty() && !createListing) {
-                    XWPFParagraph paragraph = addParagraphContent(page + "." + section + "." + (fieldSetModel.getOrdinal() + 1) + " " + fieldSetModel.getTitle(), mainDocumentPart, ParagraphStyle.HEADER6, numId, indent);
+                    XWPFParagraph paragraph = addParagraphContent(page + "." + section + "." + (fieldSetModel.getOrdinal() + 1) + " " + fieldSetModel.getTitle(), mainDocumentPart, ParagraphStyle.HEADER6, numId, indent, paragraphCursor.getCTP().newCursor(), false, false, null, null);
 //                    CTDecimalNumber number = paragraph.getCTP().getPPr().getNumPr().addNewIlvl();
 //                    number.setVal(BigInteger.valueOf(indent));
                     paragraphPos = mainDocumentPart.getPosOfParagraph(paragraph);
                     if (fieldSetModel.getMultiplicity() != null && !fieldSetModel.getMultiplicity().getTableView() && propertyDefinitionFieldSetItemModels.size() > 1) {
-                        XWPFParagraph paragraphInner = addParagraphContent(c + ". ", mainDocumentPart, ParagraphStyle.TEXT, numId, indent);
+                        XWPFParagraph paragraphInner = addParagraphContent(c + ". ", mainDocumentPart, ParagraphStyle.TEXT, numId, indent, paragraphCursor.getCTP().newCursor(), false, false, null, null);
                         paragraphPosInner = mainDocumentPart.getPosOfParagraph(paragraphInner);
                         hasMultiplicityItems = true;
                         multiplicityItems++;
@@ -365,11 +384,12 @@ public class WordBuilderImpl implements WordBuilder {
                 XWPFTableRow row = null;
                 int numOfRows = 0;
                 if (fieldSetModel.getMultiplicity() != null && fieldSetModel.getMultiplicity().getTableView()) {
-                    tbl = mainDocumentPart.createTable();
+                    XmlCursor cursor = paragraphCursor.getCTP().newCursor();
+                    tbl = mainDocumentPart.insertNewTbl(cursor);
                     tbl.setWidthType(TableWidthType.PCT);
                     tbl.setWidth("100%");
                     tbl.setTableAlignment(TableRowAlign.CENTER);
-                    mainDocumentPart.createParagraph();
+                    mainDocumentPart.insertNewParagraph(paragraphCursor.getCTP().newCursor());
                     createHeadersInTable(fieldSetModel.getFields(), propertyDefinitionFieldSetItemModels.getFirst(), tbl, visibilityService);
                     numOfRows = tbl.getRows().size();
                     row = tbl.createRow();
@@ -384,7 +404,7 @@ public class WordBuilderImpl implements WordBuilder {
                         }
                     } else numOfRows++;
                 } else {
-                    hasValue = createFields(fieldSetModel, propertyDefinitionFieldSetItemModels.getFirst(), mainDocumentPart, indent, createListing, hasMultiplicityItems, visibilityService);
+                    hasValue = createFields(fieldSetModel, propertyDefinitionFieldSetItemModels.getFirst(), mainDocumentPart, indent, createListing, hasMultiplicityItems, visibilityService, paragraphCursor);
                 }
                 if (hasValue) {
                     returnedValue = true;
@@ -400,7 +420,7 @@ public class WordBuilderImpl implements WordBuilder {
                         if (fieldSetModel.getMultiplicity() != null && !fieldSetModel.getMultiplicity().getTableView() && !createListing) {
                             c++;
 //                            addParagraphContent(c + ". ", mainDocumentPart, ParagraphStyle.HEADER6, numId);
-                            XWPFParagraph paragraphInner = addParagraphContent(c + ". ", mainDocumentPart, ParagraphStyle.TEXT, numId, indent);
+                            XWPFParagraph paragraphInner = addParagraphContent(c + ". ", mainDocumentPart, ParagraphStyle.TEXT, numId, indent, paragraphCursor.getCTP().newCursor(), false, false, null, null);
                             paragraphPosInner = mainDocumentPart.getPosOfParagraph(paragraphInner);
                             hasMultiplicityItems = true;
                             multiplicityItems++;
@@ -410,7 +430,7 @@ public class WordBuilderImpl implements WordBuilder {
                         if (fieldSetModel.getMultiplicity() != null && fieldSetModel.getMultiplicity().getTableView() && tbl != null) {
                             row = tbl.createRow();
                             hasValueInner = createFieldsInTable(fieldSetModel, multiplicityFieldset, row, indent, createListing, hasMultiplicityItems, numOfRows, visibilityService);
-                            if (!hasValueInner && numOfRows <= 1 && fieldsCount == propertyDefinitionFieldSetItemModels.size()-2) { //-2 because we skip 1
+                            if (!hasValueInner && numOfRows <= 1 && fieldsCount == propertyDefinitionFieldSetItemModels.size() - 2) { //-2 because we skip 1
                                 for (int i = numOfRows; i >= 0; i--) {
                                     tbl.removeRow(i);
                                 }
@@ -418,7 +438,7 @@ public class WordBuilderImpl implements WordBuilder {
                                 tbl.removeRow(numOfRows);
                             } else numOfRows++;
                         } else {
-                            hasValueInner = createFields(fieldSetModel, multiplicityFieldset, mainDocumentPart, indent, createListing, hasMultiplicityItems, visibilityService);
+                            hasValueInner = createFields(fieldSetModel, multiplicityFieldset, mainDocumentPart, indent, createListing, hasMultiplicityItems, visibilityService, paragraphCursor);
                         }
 //                        if(hasValue){
                         if (hasValueInner) {
@@ -433,14 +453,14 @@ public class WordBuilderImpl implements WordBuilder {
                         fieldsCount++;
                     }
                     if (multiplicityItems == 1) {
-                        String text = mainDocumentPart.getLastParagraph().getRuns().getFirst().getText(0);
+                        String text = paragraphCursor.getRuns().getFirst().getText(0);
                         if (text.equals("a. ")) {
-                            mainDocumentPart.getLastParagraph().removeRun(0);
+                            paragraphCursor.removeRun(0);
                         }
                     }
                 }
                 if (propertyDefinitionFieldSetModel.getComment() != null && !propertyDefinitionFieldSetModel.getComment().isEmpty()) {
-                    addParagraphContent("<i>Comment:</i>\n" + propertyDefinitionFieldSetModel.getComment(), mainDocumentPart, ParagraphStyle.HTML, numId, indent);
+                    addParagraphContent("<i>Comment:</i>\n" + propertyDefinitionFieldSetModel.getComment(), mainDocumentPart, ParagraphStyle.HTML, numId, indent, paragraphCursor.getCTP().newCursor(), false, false, null, null);
                     hasValue = true;
                     returnedValue = true;
                 }
@@ -518,7 +538,7 @@ public class WordBuilderImpl implements WordBuilder {
                         }
                         if (isImage) {
                             if (fieldValueModel != null && fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty()) {
-                                XWPFParagraph paragraph = addCellContent(fieldValueModel.getFile(), mainDocumentPart, ParagraphStyle.IMAGE, numId, 0, numOfRows, numOfCells, 0);
+                                XWPFParagraph paragraph = addCellContent(fieldValueModel.getFile(), mainDocumentPart, ParagraphStyle.IMAGE, numId, 0, numOfRows, numOfCells, 0, false, false, null, null);
                                 if (paragraph != null) {
                                     hasValue = true;
                                 }
@@ -528,7 +548,7 @@ public class WordBuilderImpl implements WordBuilder {
                             }
                         } else if (fieldValueModel != null && fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty() && fieldValueModel.getFile() != null) {
                             if (fieldValueModel.getFile().getFilename() != null && !fieldValueModel.getFile().getFilename().isBlank()) {
-                                XWPFParagraph paragraph = addCellContent(fieldValueModel.getFile().getFilename(), mainDocumentPart, ParagraphStyle.TEXT, numId, indent, numOfRows, numOfCells, 0);
+                                XWPFParagraph paragraph = addCellContent(fieldValueModel.getFile().getFilename(), mainDocumentPart, ParagraphStyle.TEXT, numId, indent, numOfRows, numOfCells, 0, false, false, null, null);
                                 if (paragraph != null) {
                                     hasValue = true;
                                 }
@@ -539,15 +559,20 @@ public class WordBuilderImpl implements WordBuilder {
                         }
                     } else if (fieldValueModel != null) {
                         this.indent = indent;
+                        boolean isReference = false;
                         boolean isResearcher = false;
                         if (field.getData() instanceof ReferenceTypeDataModel) {
+                            isReference = true;
                             isResearcher = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getResearcherReferenceCode());
                         }
 
-                        List<String> extractValues = this.extractValues(field, fieldValueModel);
-                        if (!extractValues.isEmpty()){
+                        List<DescriptionValue> extractValues = this.extractValues(field, fieldValueModel);
+                        if (!extractValues.isEmpty()) {
                             int numOfValuesInCell = 0;
-                            for (String extractValue : extractValues){
+                            for (DescriptionValue descriptionValue : extractValues) {
+                                String extractValue = descriptionValue.getValue();
+                                if (extractValue == null) continue;
+
                                 boolean orcidResearcher = false;
                                 String orcId = null;
                                 if (isResearcher && extractValue.contains("orcid:")) {
@@ -565,11 +590,12 @@ public class WordBuilderImpl implements WordBuilder {
                                         run.setUnderline(UnderlinePatterns.SINGLE);
                                         run.setColor("0000FF");
                                         paragraph.createRun().setText(")");
+                                        this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), descriptionValue.getReferenceId(), paragraph);
                                     }
                                     hasValue = true;
                                     hasMultiplicityItems = false;
                                 } else {
-                                    XWPFParagraph paragraph = addCellContent(extractValue, mainDocumentPart, field.getData().getFieldType().equals(FieldType.RICH_TEXT_AREA) ? ParagraphStyle.HTML : ParagraphStyle.TEXT, numId, indent, numOfRows, numOfCells, numOfValuesInCell);
+                                    XWPFParagraph paragraph = addCellContent(extractValue, mainDocumentPart, field.getData().getFieldType().equals(FieldType.RICH_TEXT_AREA) ? ParagraphStyle.HTML : ParagraphStyle.TEXT, numId, indent, numOfRows, numOfCells, numOfValuesInCell, isReference, orcidResearcher, fieldValueModel, descriptionValue.getReferenceId());
                                     if (paragraph != null) {
                                         numOfValuesInCell++;
                                         if (orcidResearcher) {
@@ -578,6 +604,7 @@ public class WordBuilderImpl implements WordBuilder {
                                             run.setUnderline(UnderlinePatterns.SINGLE);
                                             run.setColor("0000FF");
                                             paragraph.createRun().setText(")");
+                                            this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), descriptionValue.getReferenceId(), paragraph);
                                         }
                                         hasValue = true;
                                     }
@@ -593,22 +620,24 @@ public class WordBuilderImpl implements WordBuilder {
         return hasValue;
     }
 
-    private void createHypeLink(XWPFDocument mainDocumentPart, String format, String pidType, String pid, boolean hasMultiplicityItems, boolean isMultiAutoComplete) {
+    private void createHypeLink(XWPFDocument mainDocumentPart, String format, String pidType, String pid, boolean hasMultiplicityItems, boolean isMultiAutoComplete, XWPFParagraph paragraphCursor, boolean isReference, org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel, UUID referenceId) {
         PidLink pidLink = pidService.getPid(pidType);
+
         if (pidLink != null) {
+            XWPFParagraph targetParagraph = mainDocumentPart.insertNewParagraph(paragraphCursor.getCTP().newCursor());
+
             if (!hasMultiplicityItems) {
-                XWPFParagraph paragraph = mainDocumentPart.createParagraph();
-                paragraph.setIndentFromLeft(400 * indent);
+                targetParagraph.setIndentFromLeft(400 * indent);
                 if (numId != null) {
-                    paragraph.setNumID(numId);
+                    targetParagraph.setNumID(numId);
                 }
             }
 
             try {
-                XWPFHyperlinkRun run = mainDocumentPart.getLastParagraph().createHyperlinkRun(pidLink.getLink().replace("{pid}", pid));
+                XWPFHyperlinkRun run = targetParagraph.createHyperlinkRun(pidLink.getLink().replace("{pid}", pid));
 
                 if (isMultiAutoComplete) {
-                    XWPFRun r = mainDocumentPart.getLastParagraph().createRun();
+                    XWPFRun r = targetParagraph.createRun();
                     r.setText("• ");
                 }
 
@@ -616,153 +645,167 @@ public class WordBuilderImpl implements WordBuilder {
                 run.setUnderline(UnderlinePatterns.SINGLE);
                 run.setColor("0000FF");
                 run.setFontSize(11);
+
+                this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), referenceId, targetParagraph);
             } catch (Exception e) {
                 String newFormat = (isMultiAutoComplete) ? "• " + format : format;
                 if (hasMultiplicityItems) {
-                    addParagraphContent(newFormat, mainDocumentPart, ParagraphStyle.TEXT, numId, indent);
+                    addParagraphContent(newFormat, mainDocumentPart, ParagraphStyle.TEXT, numId, indent, targetParagraph.getCTP().newCursor(), isReference, false, fieldValueModel, referenceId);
                 } else {
-                    mainDocumentPart.getLastParagraph().createRun().setText(newFormat);
+                    targetParagraph.createRun().setText(newFormat);
+                    this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), referenceId, targetParagraph);
                 }
             }
         } else {
             String newFormat = (isMultiAutoComplete) ? "• " + format : format;
             if (hasMultiplicityItems) {
-                mainDocumentPart.getLastParagraph().createRun().setText(newFormat);
+                XWPFParagraph targetParagraph = mainDocumentPart.insertNewParagraph(paragraphCursor.getCTP().newCursor());
+                targetParagraph.createRun().setText(newFormat);
+                this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), referenceId, targetParagraph);
             } else {
-                addParagraphContent(newFormat, mainDocumentPart, ParagraphStyle.TEXT, numId, indent);
+                addParagraphContent(newFormat, mainDocumentPart, ParagraphStyle.TEXT, numId, indent, paragraphCursor.getCTP().newCursor(), isReference, false, fieldValueModel, referenceId);
             }
         }
     }
 
-    private Boolean createFields(FieldSetModel fieldSetModel, PropertyDefinitionFieldSetItemModel propertyDefinitionFieldSetItemModel, XWPFDocument mainDocumentPart, Integer indent, Boolean createListing, boolean hasMultiplicityItems, VisibilityService visibilityService) {
+    private Boolean createFields(FieldSetModel fieldSetModel, PropertyDefinitionFieldSetItemModel propertyDefinitionFieldSetItemModel, XWPFDocument mainDocumentPart, Integer indent, Boolean createListing, boolean hasMultiplicityItems, VisibilityService visibilityService, XWPFParagraph paragraphCursor) {
         if (createListing) this.addListing(indent, false, false);
         boolean hasValue = false;
         List<FieldModel> tempFields = fieldSetModel.getFields().stream().sorted(Comparator.comparingInt(FieldModel::getOrdinal)).toList();
         for (FieldModel field : tempFields) {
             if (field.getIncludeInExport() && visibilityService.isVisible(field.getId(), propertyDefinitionFieldSetItemModel.getOrdinal())) {
                 if (!createListing) {
-                        org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel = propertyDefinitionFieldSetItemModel.getFields().getOrDefault(field.getId(), null);
-                        if (field.getData() != null) {
-                            if (field.getData().getFieldType().equals(FieldType.UPLOAD)) {
-                                boolean isImage = false;
-                                for (UploadDataModel.UploadOptionModel type : ((UploadDataModel) field.getData()).getTypes()) {
-                                    String fileFormat = type.getValue();
-                                    if (IMAGE_TYPE_MAP.containsKey(fileFormat)) {
-                                        isImage = true;
-                                        break;
-                                    }
+                    org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel = propertyDefinitionFieldSetItemModel.getFields().getOrDefault(field.getId(), null);
+                    if (field.getData() != null) {
+                        if (field.getData().getFieldType().equals(FieldType.UPLOAD)) {
+                            boolean isImage = false;
+                            for (UploadDataModel.UploadOptionModel type : ((UploadDataModel) field.getData()).getTypes()) {
+                                String fileFormat = type.getValue();
+                                if (IMAGE_TYPE_MAP.containsKey(fileFormat)) {
+                                    isImage = true;
+                                    break;
                                 }
-                                if (isImage) {
-                                    if (fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty()) {
-                                        XWPFParagraph paragraph = addParagraphContent(fieldValueModel.getFile(), mainDocumentPart, ParagraphStyle.IMAGE, numId, 0); //TODO
-                                        if (paragraph != null) {
-                                            hasValue = true;
-                                        }
-                                        if (hasMultiplicityItems) {
-                                            hasMultiplicityItems = false;
-                                        }
-                                    }
-                                } else if (fieldValueModel != null && fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty() && fieldValueModel.getFile() != null) {
-                                    if (fieldValueModel.getFile().getFilename() != null && !fieldValueModel.getFile().getFilename().isBlank()) {
-                                        XWPFParagraph paragraph = addParagraphContent(fieldValueModel.getFile().getFilename(), mainDocumentPart, ParagraphStyle.TEXT, numId, indent);
-                                        if (paragraph != null) {
-                                            hasValue = true;
-                                        }
-                                        if (hasMultiplicityItems) {
-                                            hasMultiplicityItems = false;
-                                        }
-                                    }
-                                }
-                            } else if (fieldValueModel != null) {
-                                this.indent = indent;
-                                boolean isMultiAutoComplete = false;
-                                boolean isResearcher = false;
-                                boolean isOrganization = false;
-                                boolean isExternalDataset = false;
-                                boolean isPublication = false;
-                                if (field.getData() instanceof LabelAndMultiplicityDataModel) {
-                                    isMultiAutoComplete = ((LabelAndMultiplicityDataModel) field.getData()).getMultipleSelect() != null && ((LabelAndMultiplicityDataModel) field.getData()).getMultipleSelect();
-                                }
-                                if (field.getData() instanceof SelectDataModel) {
-                                    isMultiAutoComplete = ((SelectDataModel) field.getData()).getMultipleSelect() != null && ((SelectDataModel) field.getData()).getMultipleSelect();
-                                }
-                                if (field.getData() instanceof ReferenceTypeDataModel) {
-                                    isMultiAutoComplete = ((ReferenceTypeDataModel) field.getData()).getMultipleSelect() != null && ((ReferenceTypeDataModel) field.getData()).getMultipleSelect();
-                                    isResearcher = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getResearcherReferenceCode());
-                                    isOrganization = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getOrganizationReferenceCode());
-                                    isExternalDataset = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getDatasetReferenceCode());
-                                    isPublication = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getPublicationReferenceCode());
-                                }
-
-                                if (isOrganization || isExternalDataset || isPublication) {
-                                    if (fieldValueModel.getReferences() != null) {
-                                        for (ReferenceModel referenceModel : fieldValueModel.getReferences()) {
-                                            String label = "";
-                                            if (referenceModel.getLabel() != null && !referenceModel.getLabel().isBlank()) {
-                                                label =  referenceModel.getLabel();
-                                            } else if (referenceModel.getDescription() != null && !referenceModel.getDescription().isBlank()) {
-                                                label = (label.isBlank() ? "" : " ") + referenceModel.getDescription();
-                                            }
-                                            ReferenceFieldModel fieldModel = referenceModel.getDefinition() != null && referenceModel.getDefinition().getFields() != null &&  !referenceModel.getDefinition().getFields().isEmpty() ? referenceModel.getDefinition().getFields().stream().filter(x -> x.getCode().equals("pidTypeField")).findFirst().orElse(null) : null;
-                                            createHypeLink(mainDocumentPart, label, fieldModel != null ? fieldModel.getValue() : null, referenceModel.getReference(), hasMultiplicityItems, isMultiAutoComplete && fieldValueModel.getReferences().size() > 1);
-                                        }
-                                        if (hasMultiplicityItems) hasMultiplicityItems = false;
-
+                            }
+                            if (isImage) {
+                                if (fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty()) {
+                                    XWPFParagraph paragraph = addParagraphContent(fieldValueModel.getFile(), mainDocumentPart, ParagraphStyle.IMAGE, numId, 0, paragraphCursor.getCTP().newCursor(), false, false, null, null);
+                                    if (paragraph != null) {
                                         hasValue = true;
                                     }
+                                    if (hasMultiplicityItems) {
+                                        hasMultiplicityItems = false;
+                                    }
+                                }
+                            } else if (fieldValueModel != null && fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isEmpty() && fieldValueModel.getFile() != null) {
+                                if (fieldValueModel.getFile().getFilename() != null && !fieldValueModel.getFile().getFilename().isBlank()) {
+                                    XWPFParagraph paragraph = addParagraphContent(fieldValueModel.getFile().getFilename(), mainDocumentPart, ParagraphStyle.TEXT, numId, indent, paragraphCursor.getCTP().newCursor(), false, false, null, null);
+                                    if (paragraph != null) {
+                                        hasValue = true;
+                                    }
+                                    if (hasMultiplicityItems) {
+                                        hasMultiplicityItems = false;
+                                    }
+                                }
+                            }
+                        } else if (fieldValueModel != null) {
+                            this.indent = indent;
+                            boolean isMultiAutoComplete = false;
+                            boolean isReference = false;
+                            boolean isResearcher = false;
+                            boolean isOrganization = false;
+                            boolean isExternalDataset = false;
+                            boolean isPublication = false;
+                            if (field.getData() instanceof LabelAndMultiplicityDataModel) {
+                                isMultiAutoComplete = ((LabelAndMultiplicityDataModel) field.getData()).getMultipleSelect() != null && ((LabelAndMultiplicityDataModel) field.getData()).getMultipleSelect();
+                            }
+                            if (field.getData() instanceof SelectDataModel) {
+                                isMultiAutoComplete = ((SelectDataModel) field.getData()).getMultipleSelect() != null && ((SelectDataModel) field.getData()).getMultipleSelect();
+                            }
+                            if (field.getData() instanceof ReferenceTypeDataModel) {
+                                isReference = true;
+                                isMultiAutoComplete = ((ReferenceTypeDataModel) field.getData()).getMultipleSelect() != null && ((ReferenceTypeDataModel) field.getData()).getMultipleSelect();
+                                isResearcher = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getResearcherReferenceCode());
+                                isOrganization = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getOrganizationReferenceCode());
+                                isExternalDataset = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getDatasetReferenceCode());
+                                isPublication = ((ReferenceTypeDataModel) field.getData()).getReferenceType().getCode().equals(this.wordFileTransformerServiceProperties.getPublicationReferenceCode());
+                            }
 
-                                } else {
-                                    List<String> extractValues = this.extractValues(field, fieldValueModel);
+                            if (isOrganization || isExternalDataset || isPublication) {
+                                if (fieldValueModel.getReferences() != null) {
+                                    for (ReferenceModel referenceModel : fieldValueModel.getReferences()) {
+                                        String label = "";
+                                        if (referenceModel.getLabel() != null && !referenceModel.getLabel().isBlank()) {
+                                            label = referenceModel.getLabel();
+                                        } else if (referenceModel.getDescription() != null && !referenceModel.getDescription().isBlank()) {
+                                            label = (label.isBlank() ? "" : " ") + referenceModel.getDescription();
+                                        }
+                                        ReferenceFieldModel fieldModel = referenceModel.getDefinition() != null && referenceModel.getDefinition().getFields() != null && !referenceModel.getDefinition().getFields().isEmpty() ? referenceModel.getDefinition().getFields().stream().filter(x -> x.getCode().equals("pidTypeField")).findFirst().orElse(null) : null;
+                                        createHypeLink(mainDocumentPart, label, fieldModel != null ? fieldModel.getValue() : null, referenceModel.getReference(), hasMultiplicityItems, isMultiAutoComplete && fieldValueModel.getReferences().size() > 1, paragraphCursor, isReference, fieldValueModel, referenceModel.getId());
+                                    }
+                                    if (hasMultiplicityItems) hasMultiplicityItems = false;
 
-                                    if (!extractValues.isEmpty()){
-                                        for (String extractValue : extractValues){
-                                            boolean orcidResearcher = false;
-                                            String orcId = null;
-                                            if (isResearcher && extractValue.contains("orcid:")) {
-                                                orcId = extractValue.substring(extractValue.indexOf(':') + 1, extractValue.indexOf(')'));
-                                                extractValue = extractValue.substring(0, extractValue.indexOf(':') + 1) + " ";
-                                                orcidResearcher = true;
+                                    hasValue = true;
+                                }
+
+                            } else {
+                                List<DescriptionValue> extractValues = this.extractValues(field, fieldValueModel);
+
+                                if (!extractValues.isEmpty()) {
+                                    for (DescriptionValue descriptionValue : extractValues) {
+                                        String extractValue = descriptionValue.getValue();
+                                        if (extractValue == null) continue;
+
+                                        boolean orcidResearcher = false;
+                                        String orcId = null;
+                                        if (isResearcher && extractValue.contains("orcid:")) {
+                                            orcId = extractValue.substring(extractValue.indexOf(':') + 1, extractValue.indexOf(')'));
+                                            extractValue = extractValue.substring(0, extractValue.indexOf(':') + 1) + " ";
+                                            orcidResearcher = true;
+                                        }
+                                        if (extractValues.size() > 1) extractValue = "• " + extractValue;
+
+                                        XWPFParagraph paragraph = addParagraphContent(extractValue, mainDocumentPart, field.getData().getFieldType().equals(FieldType.RICH_TEXT_AREA) ? ParagraphStyle.HTML : ParagraphStyle.TEXT, numId, indent, paragraphCursor.getCTP().newCursor(), isReference, orcidResearcher, fieldValueModel, descriptionValue.getReferenceId());
+
+                                        if (paragraph != null && hasMultiplicityItems) {
+                                            if (orcidResearcher) {
+                                                XWPFHyperlinkRun run = paragraphCursor.createHyperlinkRun("https://orcid.org/" + orcId);
+                                                run.setText(orcId);
+                                                run.setUnderline(UnderlinePatterns.SINGLE);
+                                                run.setColor("0000FF");
+                                                paragraph.createRun().setText(")");
+                                                this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), descriptionValue.getReferenceId(), paragraph);
                                             }
-                                            if (extractValues.size() > 1) extractValue = "• " + extractValue;
-                                            if (hasMultiplicityItems) {
-                                                mainDocumentPart.getLastParagraph().createRun().setText(extractValue);
+                                            hasValue = true;
+                                            hasMultiplicityItems = false;
+
+                                        } else {
+                                            if (paragraph != null) {
                                                 if (orcidResearcher) {
-                                                    XWPFHyperlinkRun run = mainDocumentPart.getLastParagraph().createHyperlinkRun("https://orcid.org/" + orcId);
+                                                    XWPFHyperlinkRun run = paragraph.createHyperlinkRun("https://orcid.org/" + orcId);
                                                     run.setText(orcId);
                                                     run.setUnderline(UnderlinePatterns.SINGLE);
                                                     run.setColor("0000FF");
-                                                    mainDocumentPart.getLastParagraph().createRun().setText(")");
+                                                    paragraph.createRun().setText(")");
+                                                    this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), descriptionValue.getReferenceId(), paragraph);
                                                 }
                                                 hasValue = true;
-                                                hasMultiplicityItems = false;
-                                            } else {
-                                                XWPFParagraph paragraph = addParagraphContent(extractValue, mainDocumentPart, field.getData().getFieldType().equals(FieldType.RICH_TEXT_AREA) ? ParagraphStyle.HTML : ParagraphStyle.TEXT, numId, indent);
-                                                if (paragraph != null) {
-                                                    if (orcidResearcher) {
-                                                        XWPFHyperlinkRun run = paragraph.createHyperlinkRun("https://orcid.org/" + orcId);
-                                                        run.setText(orcId);
-                                                        run.setUnderline(UnderlinePatterns.SINGLE);
-                                                        run.setColor("0000FF");
-                                                        paragraph.createRun().setText(")");
-                                                    }
-                                                    hasValue = true;
-                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
                 }
             }
         }
         return hasValue;
     }
 
-    private XWPFParagraph addCellContent(Object content, XWPFTableRow mainDocumentPart, ParagraphStyle style, BigInteger numId, int indent, int numOfRows, int numOfCells, int numOfValuesInCell) {
+    private XWPFParagraph addCellContent(Object content, XWPFTableRow mainDocumentPart, ParagraphStyle style, BigInteger numId, int indent, int numOfRows, int numOfCells, int numOfValuesInCell, boolean isReference, boolean orcidResearcher, org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel, UUID referenceId) {
         if (content == null) return null;
-        if (content instanceof String && ((String) content).isEmpty())  return null;
-        
+        if (content instanceof String && ((String) content).isEmpty()) return null;
+
         this.indent = indent;
         XWPFTableCell cell;
         if (numOfRows > 0 || numOfValuesInCell > 0) {
@@ -782,28 +825,91 @@ public class WordBuilderImpl implements WordBuilder {
             if (numId != null) {
                 paragraph.setNumID(numId);
             }
+
+            // add reference fields information. If reference is orcid researcher don't add information here because we have specific case
+            if (isReference && !orcidResearcher && fieldValueModel.getReferences() != null) {
+                this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), referenceId, paragraph);
+            }
             return paragraph;
         }
         return null;
     }
 
-    @Override
-    public XWPFParagraph addParagraphContent(Object content, XWPFDocument mainDocumentPart, ParagraphStyle style, BigInteger numId, int indent) {
+    public XWPFParagraph addParagraphContent(Object content, XWPFDocument mainDocumentPart, ParagraphStyle style, BigInteger numId, int indent, XmlCursor cursor, boolean isReference, boolean orcidResearcher, org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel, UUID referenceId) {
         if (content != null) {
-            if (content instanceof String && ((String)content).isEmpty()) {
+            if (content instanceof String && ((String) content).isEmpty()) {
                 return null;
             }
             this.indent = indent;
-            XWPFParagraph paragraph = this.options.get(style).apply(mainDocumentPart, content);
-            if (paragraph != null) {
-                paragraph.setIndentFromLeft(400*indent);
-                if (numId != null) {
-                    paragraph.setNumID(numId);
-                }
-                return paragraph;
+
+            XWPFParagraph paragraph = mainDocumentPart.insertNewParagraph(cursor);
+
+            paragraph.setIndentFromLeft(400 * indent);
+            if (numId != null) {
+                paragraph.setNumID(numId);
             }
+
+            this.optionsWithCursor.get(style).apply(paragraph, content);
+
+            // add reference fields information. If reference is orcid researcher don't add information here because we have specific case
+            if (isReference && !orcidResearcher && fieldValueModel.getReferences() != null) {
+                this.addReferenceFieldDefinitionToParagraph(fieldValueModel.getReferences(), referenceId, paragraph);
+            }
+            return paragraph;
         }
         return null;
+    }
+
+    public void addReferenceFieldDefinitionToParagraph(List<org.opencdmp.commonmodels.models.reference.ReferenceModel> references, UUID referenceId, XWPFParagraph paragraph) {
+        if (references == null || referenceId == null) return;
+
+        ReferenceModel reference = references.stream().filter(x -> x.getId() != null && x.getId().equals(referenceId)).findFirst().orElse(null);
+        if (reference == null) return;
+        if (reference.getDefinition() != null && reference.getDefinition().getFields() != null && !reference.getDefinition().getFields().isEmpty()) {
+            XWPFRun runExtraInfo = paragraph.createRun();
+            runExtraInfo.addBreak();
+            runExtraInfo.setColor("555555");
+            runExtraInfo.setItalic(true);
+
+            String keyCodeValue = null;
+            String referenceTypeCodeValue = null;
+
+            for (ReferenceFieldModel referenceFieldModel : reference.getDefinition().getFields()) {
+                String code = referenceFieldModel.getCode();
+                String value = referenceFieldModel.getValue();
+
+                // handle this code
+                if (code.equals(REFERENCE_TYPE_FIELD_CODE_KEY)) {
+                    if (value != null && !value.isBlank()) keyCodeValue = value;
+                    continue;
+                }
+
+                // handle this code
+                if (code.equals(REFERENCE_TYPE_FIELD_CODE_REFERENCE_TYPE)) {
+                    if (value != null && !value.isBlank()) referenceTypeCodeValue = value;
+                    continue;
+                }
+
+                if (value != null && !value.isBlank()) {
+                    if (reference.getType() != null && reference.getType().getDefinition() != null && reference.getType().getDefinition().getFields() != null && !reference.getType().getDefinition().getFields().isEmpty()) {
+                        org.opencdmp.commonmodels.models.referencetype.ReferenceTypeFieldModel referenceTypeFieldModel = reference.getType().getDefinition().getFields().stream().filter(x -> x.getCode() != null && x.getCode().equals(code)).findFirst().orElse(null);
+                        if (referenceTypeFieldModel != null && referenceTypeFieldModel.getLabel() != null && !referenceTypeFieldModel.getLabel().isBlank()) {
+                            runExtraInfo.setText(referenceTypeFieldModel.getLabel() + ": " + value);
+                        } else {
+                            runExtraInfo.setText(code + ": " + value);
+                        }
+                    } else {
+                        runExtraInfo.setText(code + ": " + value);
+                    }
+                    runExtraInfo.addBreak();
+                }
+            }
+
+            if (keyCodeValue != null && referenceTypeCodeValue != null) {
+                runExtraInfo.setText("Source: " + keyCodeValue + " (" + referenceTypeCodeValue + ")");
+                runExtraInfo.addBreak();
+            }
+        }
     }
 
     private void addListing(int indent, boolean question, Boolean hasIndication) {
@@ -823,8 +929,8 @@ public class WordBuilderImpl implements WordBuilder {
         }
     }
 
-    private List<String> extractValues(FieldModel field, org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel) {
-        List<String> values = new ArrayList<>();
+    private List<DescriptionValue> extractValues(FieldModel field, org.opencdmp.commonmodels.models.description.FieldModel fieldValueModel) {
+        List<DescriptionValue> values = new ArrayList<>();
         if (fieldValueModel == null || field == null || field.getData() == null) {
             return values;
         }
@@ -839,7 +945,7 @@ public class WordBuilderImpl implements WordBuilder {
                             } else if (referenceModel.getDescription() != null && !referenceModel.getDescription().isBlank()) {
                                 label = (label.isBlank() ? "" : " ") + referenceModel.getDescription();
                             }
-                            if (!label.isBlank()) values.add(label);
+                            if (!label.isBlank()) values.add(new DescriptionValue(label, referenceModel.getId()));
                         }
                     }
                 }
@@ -847,7 +953,7 @@ public class WordBuilderImpl implements WordBuilder {
             }
             case TAGS:
                 if (fieldValueModel.getTextListValue() != null && !fieldValueModel.getTextListValue().isEmpty()) {
-                    values.addAll(fieldValueModel.getTextListValue());
+                    fieldValueModel.getTextListValue().forEach(x -> values.add(new DescriptionValue(x)));
                 }
                 break;
             case SELECT: {
@@ -861,22 +967,22 @@ public class WordBuilderImpl implements WordBuilder {
                     }
                     if (selectDataModel != null && selectDataModel.getOptions() != null && !selectDataModel.getOptions().isEmpty()) {
                         for (SelectDataModel.OptionModel option : selectDataModel.getOptions()) {
-                            if (fieldValueModel.getTextListValue().contains(option.getValue()) || fieldValueModel.getTextListValue().contains(option.getLabel())) values.add(option.getLabel());
+                            if (fieldValueModel.getTextListValue().contains(option.getValue()) || fieldValueModel.getTextListValue().contains(option.getLabel())) values.add(new DescriptionValue(option.getLabel()));
                         }
                     }
                 }
                 break;
             }
             case BOOLEAN_DECISION:
-                if (fieldValueModel.getBooleanValue() != null && fieldValueModel.getBooleanValue()) values.add("Yes");
-                if (fieldValueModel.getBooleanValue() != null && !fieldValueModel.getBooleanValue()) values.add("No");
+                if (fieldValueModel.getBooleanValue() != null && fieldValueModel.getBooleanValue()) values.add(new DescriptionValue("Yes"));
+                if (fieldValueModel.getBooleanValue() != null && !fieldValueModel.getBooleanValue()) values.add(new DescriptionValue("No"));
                 break;
             case RADIO_BOX:
                 RadioBoxDataModel radioBoxDataModel = (RadioBoxDataModel) field.getData();
                 if (fieldValueModel.getTextValue() != null && radioBoxDataModel != null && radioBoxDataModel.getOptions() != null) {
                     for (RadioBoxDataModel.RadioBoxOptionModel option : radioBoxDataModel.getOptions()) {
                         if (option.getValue().equals(fieldValueModel.getTextValue()) || option.getLabel().equals(fieldValueModel.getTextValue())) {
-                            values.add(option.getLabel());
+                            values.add(new DescriptionValue(option.getLabel()));
                             break;
                         }
                     }
@@ -884,23 +990,23 @@ public class WordBuilderImpl implements WordBuilder {
                 break;
             case CHECK_BOX: {
                 LabelDataModel checkBoxData = (LabelDataModel) field.getData();
-                if (fieldValueModel.getBooleanValue() != null && fieldValueModel.getBooleanValue() && checkBoxData != null && checkBoxData.getLabel() != null) values.add(checkBoxData.getLabel());
+                if (fieldValueModel.getBooleanValue() != null && fieldValueModel.getBooleanValue() && checkBoxData != null && checkBoxData.getLabel() != null) values.add(new DescriptionValue(checkBoxData.getLabel()));
                 break;
             }
             case DATE_PICKER: {
-                if (fieldValueModel.getDateValue() != null) values.add(DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault()).format(fieldValueModel.getDateValue()));
+                if (fieldValueModel.getDateValue() != null) values.add(new DescriptionValue(DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault()).format(fieldValueModel.getDateValue())));
                 break;
             }
             case FREE_TEXT:
             case TEXT_AREA:
             case RICH_TEXT_AREA: {
-                if (fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isBlank()) values.add(fieldValueModel.getTextValue());
+                if (fieldValueModel.getTextValue() != null && !fieldValueModel.getTextValue().isBlank()) values.add(new DescriptionValue(fieldValueModel.getTextValue()));
                 break;
             }
             case DATASET_IDENTIFIER:
             case VALIDATION: {
                 if (fieldValueModel.getExternalIdentifier() != null) {
-                    values.add("id: " + fieldValueModel.getExternalIdentifier().getIdentifier() + ", Type: " + fieldValueModel.getExternalIdentifier().getType());
+                    values.add(new DescriptionValue("id: " + fieldValueModel.getExternalIdentifier().getIdentifier() + ", Type: " + fieldValueModel.getExternalIdentifier().getType()));
                 }
                 break;
             }
@@ -916,24 +1022,20 @@ public class WordBuilderImpl implements WordBuilder {
     }
 
     @Override
-    public int findPosOfPoweredBy(XWPFDocument document) {
+    public XWPFParagraph findParagraphFormCode(XWPFDocument document, String code) {
         if (document == null) throw new MyApplicationException("Document required");
-        if (document.getParagraphs() == null) return -1;
+        if (document.getBodyElements() == null) return null;
 
-        for (XWPFParagraph p : document.getParagraphs()) {
-            List<XWPFRun> runs = p.getRuns();
-            if (runs != null) {
-                for (XWPFRun r : runs) {
-                    String text = r.getText(0);
-                    if (text != null) {
-                        if (text.equals("Powered by")) {
-                            return document.getPosOfParagraph(p) - 1;
-                        }
-                    }
+        for (int i = 0; i < document.getBodyElements().size(); i++) {
+            IBodyElement element = document.getBodyElements().get(i);
+            if (element instanceof XWPFParagraph) {
+                XWPFParagraph par = (XWPFParagraph) element;
+                if (par.getText().contains(code)) {
+                    return par;
                 }
             }
         }
-        return -1;
+        return null;
     }
 
     private List<String> getReferenceTypeCodesFromDocument(XWPFDocument doc, boolean isFooterMode) {
@@ -1181,7 +1283,7 @@ public class WordBuilderImpl implements WordBuilder {
             referencesByTypeCodeNames.append(referenceModel.getLabel()).append(i < referencesByTypeCode.size() ? ", " : "");
         }
         if (!isFooterMode)
-            this.replaceTextSegment(paragraph, textToFind, referencesByTypeCodeNames.toString(), 15);
+            this.replaceTextSegment(paragraph, textToFind, referencesByTypeCodeNames.toString());
         else
             this.replaceTextSegment(paragraph, textToFind, !referencesByTypeCode.isEmpty() ? referencesByTypeCode.getFirst().getReference() : "-");
     }

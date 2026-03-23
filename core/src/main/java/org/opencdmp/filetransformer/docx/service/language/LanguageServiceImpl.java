@@ -1,6 +1,5 @@
 package org.opencdmp.filetransformer.docx.service.language;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import gr.cite.tools.logging.LoggerService;
 import org.opencdmp.filetransformer.docx.model.Language;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.WordFileTransformerServiceProperties;
@@ -8,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.*;
 import java.util.ArrayList;

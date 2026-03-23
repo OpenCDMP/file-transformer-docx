@@ -3,7 +3,8 @@ package org.opencdmp.filetransformer.docx.service.wordfiletransformer;
 import gr.cite.tools.exception.MyApplicationException;
 import gr.cite.tools.logging.LoggerService;
 import org.apache.poi.util.Units;
-import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.apache.poi.xwpf.usermodel.*;
+import org.apache.xmlbeans.XmlCursor;
 import org.opencdmp.commonmodels.enums.*;
 import org.opencdmp.commonmodels.models.ConfigurationField;
 import org.opencdmp.commonmodels.models.plan.PlanBlueprintValueModel;
@@ -16,6 +17,7 @@ import org.opencdmp.commonmodels.models.planblueprint.*;
 import org.opencdmp.commonmodels.models.planreference.PlanReferenceModel;
 import org.opencdmp.commonmodels.models.plugin.PluginFieldModel;
 import org.opencdmp.commonmodels.models.plugin.PluginModel;
+import org.opencdmp.commonmodels.models.reference.ReferenceFieldModel;
 import org.opencdmp.commonmodels.models.reference.ReferenceModel;
 import org.opencdmp.filetransformerbase.interfaces.FileTransformerClient;
 import org.opencdmp.filetransformerbase.interfaces.FileTransformerConfiguration;
@@ -26,9 +28,8 @@ import org.opencdmp.filetransformer.docx.model.enums.ParagraphStyle;
 import org.opencdmp.filetransformer.docx.service.storage.FileStorageService;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.visibility.VisibilityServiceImpl;
 import org.opencdmp.filetransformer.docx.service.wordfiletransformer.word.WordBuilder;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
-import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTbl;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
@@ -42,6 +43,7 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 import javax.management.InvalidApplicationException;
+import java.awt.*;
 import java.io.*;
 import java.math.BigInteger;
 import java.text.DecimalFormat;
@@ -49,7 +51,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
 
 import static org.apache.poi.xwpf.usermodel.Document.*;
 import static org.apache.poi.xwpf.usermodel.Document.PICTURE_TYPE_WMF;
@@ -97,7 +99,7 @@ public class WordFileTransformerService implements FileTransformerClient {
     }
 
     @Override
-    public FileEnvelopeModel exportPlan(PlanModel plan, String variant) throws IOException, InvalidApplicationException {
+    public FileEnvelopeModel exportPlan(PlanModel plan, String variant) {
         FileFormats fileFormat = FileFormats.of(variant);
         byte[] bytes = this.buildPlanWordDocument(plan);
         String filename = switch (fileFormat) {
@@ -121,7 +123,7 @@ public class WordFileTransformerService implements FileTransformerClient {
     }
 
     @Override
-    public FileEnvelopeModel exportDescription(DescriptionModel descriptionModel, String variant) throws InvalidApplicationException, IOException {
+    public FileEnvelopeModel exportDescription(DescriptionModel descriptionModel, String variant) {
         FileFormats fileFormat = FileFormats.of(variant);
         byte[] bytes = this.buildDescriptionWordDocument(descriptionModel);
         String filename = switch (fileFormat) {
@@ -191,7 +193,7 @@ public class WordFileTransformerService implements FileTransformerClient {
     }
     
 
-    private byte[] buildPlanWordDocument(PlanModel planEntity) throws IOException, InvalidApplicationException {
+    private byte[] buildPlanWordDocument(PlanModel planEntity) {
         if (planEntity == null) throw new MyApplicationException("planEntity required");
         PlanBlueprintModel planBlueprintModel = planEntity.getPlanBlueprint();
         if (planBlueprintModel == null) throw new MyApplicationException("PlanBlueprint required");
@@ -217,48 +219,49 @@ public class WordFileTransformerService implements FileTransformerClient {
 
         this.wordBuilder.fillFirstPage(planEntity, null, document, false);
 
-        int powered_pos = this.wordBuilder.findPosOfPoweredBy(document);
-        XWPFParagraph powered_par = null;
-        XWPFParagraph argos_img_par = null;
-        if (powered_pos != -1) {
-            powered_par = document.getParagraphArray(powered_pos);
-            argos_img_par = document.getParagraphArray(powered_pos + 1);
-        }
+        XWPFParagraph formCodeParagraph = this.wordBuilder.findParagraphFormCode(document, "'{OPENCDMP.PLAN.FORM}'");
 
-        for (SectionModel sectionModel : planBlueprintModel.getDefinition().getSections()) {
-            buildPlanSection(planEntity, sectionModel, document);
-        }
+        if (formCodeParagraph != null) {
 
-        if (powered_pos != -1) {
-            document.getLastParagraph().setPageBreak(false);
-            document.createParagraph();
-            document.setParagraph(powered_par, document.getParagraphs().size() - 1);
+            formCodeParagraph.getRuns().forEach(run -> run.setText("", 0));
 
-            document.createParagraph();
-            document.setParagraph(argos_img_par, document.getParagraphs().size() - 1);
+            XmlCursor cursor = formCodeParagraph.getCTP().newCursor();
 
-            document.removeBodyElement(powered_pos + 1);
-            document.removeBodyElement(powered_pos + 1);
+            for (SectionModel sectionModel : planBlueprintModel.getDefinition().getSections()) {
+                cursor = buildPlanSection(planEntity, sectionModel, document, cursor);
+            }
         }
 
         this.wordBuilder.fillFooter(planEntity, null, document);
         this.wordBuilder.fillHeader(planEntity, null, document);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        document.write(out);
+        try {
+            document.write(out);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         byte[] bytes = out.toByteArray();
-        out.close();
+        try {
+            out.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         return bytes;
     }
 
-    private void buildPlanSection(PlanModel planEntity, SectionModel sectionModel, XWPFDocument document) throws InvalidApplicationException {
-        this.wordBuilder.addParagraphContent(sectionModel.getOrdinal() + ". " + sectionModel.getLabel(), document, ParagraphStyle.HEADER1, BigInteger.ZERO, 0);
+    private XmlCursor buildPlanSection(PlanModel planEntity, SectionModel sectionModel, XWPFDocument document, XmlCursor cursor) {
+
+        XWPFParagraph paragraph = document.insertNewParagraph(cursor);
+
+        this.wordBuilder.addParagraphContent(sectionModel.getOrdinal() + ". " + sectionModel.getLabel(), document, ParagraphStyle.HEADER1, BigInteger.ZERO, 0, paragraph.getCTP().newCursor(), false, false, null, null);
 
         if (sectionModel.getFields() != null) {
             sectionModel.getFields().sort(Comparator.comparingInt(FieldModel::getOrdinal));
             for (FieldModel fieldModel : sectionModel.getFields()) {
-                buildPlanSectionField(planEntity, document, fieldModel);
+                XmlCursor blueprintCursor = paragraph.getCTP().newCursor();
+                buildPlanSectionField(planEntity, document, fieldModel, blueprintCursor);
             }
         }
         
@@ -272,49 +275,47 @@ public class WordFileTransformerService implements FileTransformerClient {
                 .sorted(Comparator.comparing(DescriptionModel::getCreatedAt)).toList();
         
         if (!descriptions.isEmpty()) {
-            buildSectionDescriptions(document, descriptions);
+            buildSectionDescriptions(document, descriptions, paragraph.getCTP().newCursor());
         }
+
+        return paragraph.getCTP().newCursor();
     }
 
-    private void buildSectionDescriptions(XWPFDocument document, List<DescriptionModel> descriptions) {
+    private void buildSectionDescriptions(XWPFDocument document, List<DescriptionModel> descriptions, XmlCursor cursor) {
         if (document == null) throw new MyApplicationException("Document required");
         if (descriptions == null) throw new MyApplicationException("Descriptions required");
 
         List<DescriptionTemplateModel> descriptionTemplateModels = descriptions.stream().map(DescriptionModel::getDescriptionTemplate).toList();
         if (descriptionTemplateModels.isEmpty()) return;
 
-        wordBuilder.addParagraphContent("Descriptions", document, ParagraphStyle.HEADER2, BigInteger.ZERO, 0);
-//        for (DescriptionTemplateModel descriptionTemplateModelEntity : descriptionTemplateModels) {
-//            XWPFParagraph templateParagraph = document.createParagraph();
-//            XWPFRun runTemplateLabel = templateParagraph.createRun();
-//            runTemplateLabel.setText("• " + descriptionTemplateModelEntity.getLabel());
-//            runTemplateLabel.setColor("116a78");
-//        }
+        XWPFParagraph header = document.insertNewParagraph(cursor);
+
+        wordBuilder.addParagraphContent("Descriptions", document, ParagraphStyle.HEADER2, BigInteger.ZERO, 0, header.getCTP().newCursor(),false, false, null, null);
         
         for (DescriptionModel descriptionModel : descriptions){
-            buildSectionDescription(document, descriptionModel);
+            buildSectionDescription(document, descriptionModel, header);
         }
     }
 
-    private void buildSectionDescription(XWPFDocument document, DescriptionModel descriptionModel) {
+    private void buildSectionDescription(XWPFDocument document, DescriptionModel descriptionModel, XWPFParagraph paragraph) {
         if (document == null) throw new MyApplicationException("Document required");
         if (descriptionModel == null) throw new MyApplicationException("DescriptionModel required");
         
         DescriptionTemplateModel descriptionTemplateModelFileModel = descriptionModel.getDescriptionTemplate();
 
         // Dataset Description custom style.
-        XWPFParagraph datasetDescriptionParagraph = document.createParagraph();
+        XWPFParagraph datasetDescriptionParagraph = document.insertNewParagraph(paragraph.getCTP().newCursor());
         datasetDescriptionParagraph.setStyle("Heading4");
         datasetDescriptionParagraph.setSpacingBetween(1.5);
         XWPFRun datasetDescriptionRun = datasetDescriptionParagraph.createRun();
         datasetDescriptionRun.setText(descriptionModel.getLabel());
         datasetDescriptionRun.setFontSize(15);
 
-        XWPFParagraph descriptionParagraph = document.createParagraph();
-        wordBuilder.addParagraphContent(descriptionModel.getDescription(), document, ParagraphStyle.HTML, BigInteger.ZERO, 0);
+        XWPFParagraph descriptionParagraph = document.insertNewParagraph(paragraph.getCTP().newCursor());
+        wordBuilder.addParagraphContent(descriptionModel.getDescription(), document, ParagraphStyle.HTML, BigInteger.ZERO, 0,  paragraph.getCTP().newCursor(),false, false, null, null);
 
 
-        XWPFParagraph datasetTemplateParagraph = document.createParagraph();
+        XWPFParagraph datasetTemplateParagraph = document.insertNewParagraph(paragraph.getCTP().newCursor());
         XWPFRun runDatasetTemplate1 = datasetTemplateParagraph.createRun();
         runDatasetTemplate1.setText("Template: ");
         runDatasetTemplate1.setColor("000000");
@@ -323,7 +324,7 @@ public class WordFileTransformerService implements FileTransformerClient {
         runDatasetTemplate.setColor("116a78");
 
 
-        XWPFParagraph datasetDescParagraph = document.createParagraph();
+        XWPFParagraph datasetDescParagraph = document.insertNewParagraph(paragraph.getCTP().newCursor());
         XWPFRun runDatasetDescription1 = datasetDescParagraph.createRun();
         runDatasetDescription1.setText("Type: ");
         runDatasetDescription1.setColor("000000");
@@ -331,45 +332,43 @@ public class WordFileTransformerService implements FileTransformerClient {
         runDatasetDescription.setText(descriptionTemplateModelFileModel != null && descriptionTemplateModelFileModel.getType() != null ? descriptionTemplateModelFileModel.getType().getName() : "");
         runDatasetDescription.setColor("116a78");
 
-        document.createParagraph();
-
         try {
-            this.wordBuilder.build(document, descriptionModel.getDescriptionTemplate(), descriptionModel.getProperties(), new VisibilityServiceImpl(descriptionModel.getVisibilityStates()));
+             this.wordBuilder.build(document, descriptionModel.getDescriptionTemplate(), descriptionModel.getProperties(), new VisibilityServiceImpl(descriptionModel.getVisibilityStates()), paragraph);
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
         }
         // Page break at the end of the Dataset.
-        XWPFParagraph parBreakDataset = document.createParagraph();
+        XWPFParagraph parBreakDataset = document.insertNewParagraph(paragraph.getCTP().newCursor());;
         parBreakDataset.setPageBreak(true);
     }
 
 
-    private void buildPlanSectionField(PlanModel planEntity, XWPFDocument document, FieldModel fieldModel) throws InvalidApplicationException {
+    private void buildPlanSectionField(PlanModel planEntity, XWPFDocument document, FieldModel fieldModel, XmlCursor cursor) {
         if (fieldModel == null) throw new MyApplicationException("Field required");
         if (fieldModel.getCategory() == null) throw new MyApplicationException("Field is required" + fieldModel.getId() + " " + fieldModel.getLabel());
         switch (fieldModel.getCategory()){
             case System -> {
-                buildPlanSectionSystemField(planEntity, document, (SystemFieldModel) fieldModel);
+                buildPlanSectionSystemField(planEntity, document, (SystemFieldModel) fieldModel, cursor);
             }
-            case Extra -> buildPlanSectionExtraField(planEntity, document, (ExtraFieldModel) fieldModel);
+            case Extra -> buildPlanSectionExtraField(planEntity, document, (ExtraFieldModel) fieldModel, cursor);
             case ReferenceType -> {
-                buildPlanSectionReferenceTypeField(planEntity, document, (ReferenceTypeFieldModel) fieldModel);
+                buildPlanSectionReferenceTypeField(planEntity, document, (ReferenceTypeFieldModel) fieldModel, cursor);
             }
             case Upload -> {
-                buildPlanSectionUploadField(planEntity, document, (UploadFieldModel) fieldModel);
+                buildPlanSectionUploadField(planEntity, document, (UploadFieldModel) fieldModel, cursor);
             }
             default -> throw new MyApplicationException("Invalid type " + fieldModel.getCategory());
         }
     }
 
-    private void buildPlanSectionReferenceTypeField(PlanModel planEntity, XWPFDocument document, ReferenceTypeFieldModel referenceField) {
+    private void buildPlanSectionReferenceTypeField(PlanModel planEntity, XWPFDocument document, ReferenceTypeFieldModel referenceField, XmlCursor cursor) {
         if (referenceField == null) throw new MyApplicationException("ReferenceField required");
         if (planEntity == null) throw new MyApplicationException("planEntity required");
         if (document == null) throw new MyApplicationException("Document required");
         if (referenceField.getReferenceType() == null) throw new MyApplicationException("ReferenceField type required");
         if (referenceField.getReferenceType().getCode() == null && !referenceField.getReferenceType().getCode().isBlank()) throw new IllegalArgumentException("ReferenceField type code required");
 
-        XWPFParagraph systemFieldParagraph = document.createParagraph();
+        XWPFParagraph systemFieldParagraph = document.insertNewParagraph(cursor);
         XWPFRun runSyStemFieldTitle = systemFieldParagraph.createRun();
         runSyStemFieldTitle.setText(this.getReferenceFieldLabel(referenceField) + ": ");
         runSyStemFieldTitle.setColor("000000");
@@ -383,13 +382,21 @@ public class WordFileTransformerService implements FileTransformerClient {
             if (this.wordFileTransformerServiceProperties.getLicenceReferenceCode().equalsIgnoreCase(referenceField.getReferenceType().getCode())) runResearcher.setText(reference.getReference());
             else runResearcher.setText(reference.getLabel());
             runResearcher.setColor("116a78");
+
+            // display extra information
+            if (reference.getDefinition() != null && reference.getDefinition().getFields() != null && !reference.getDefinition().getFields().isEmpty()) {
+                this.wordBuilder.addReferenceFieldDefinitionToParagraph(List.of(reference), reference.getId(), systemFieldParagraph);
+            } else {
+                runResearcher.addBreak();
+            }
+
         }
     }
 
-    private void buildPlanSectionUploadField(PlanModel planEntity, XWPFDocument document, UploadFieldModel uploadFieldModel) {
+    private void buildPlanSectionUploadField(PlanModel planEntity, XWPFDocument document, UploadFieldModel uploadFieldModel, XmlCursor cursor) {
         if (uploadFieldModel == null) throw new MyApplicationException("UploadFieldModel required");
 
-        XWPFParagraph uploadFieldParagraph = document.createParagraph();
+        XWPFParagraph uploadFieldParagraph = document.insertNewParagraph(cursor);
         uploadFieldParagraph.setSpacingBetween(1.0);
         XWPFRun runUploadFieldLabel = uploadFieldParagraph.createRun();
         runUploadFieldLabel.setText(uploadFieldModel.getLabel() + ": ");
@@ -397,7 +404,7 @@ public class WordFileTransformerService implements FileTransformerClient {
 
         PlanBlueprintValueModel planBlueprintValueModel = planEntity.getProperties() != null && planEntity.getProperties().getPlanBlueprintValues() != null ? planEntity.getProperties().getPlanBlueprintValues().stream().filter(x -> uploadFieldModel.getId().equals(x.getFieldId())).findFirst().orElse(null) : null;
         if (planBlueprintValueModel != null && planBlueprintValueModel.getValue() != null && !planBlueprintValueModel.getValue().isBlank()) {
-            XWPFParagraph paragraph = document.createParagraph();
+            XWPFParagraph paragraph = document.insertNewParagraph(uploadFieldParagraph.getCTP().newCursor());
             paragraph.setPageBreak(true);
             paragraph.setSpacingAfter(0);
             paragraph.setAlignment(ParagraphAlignment.CENTER); //GK: Center the image if it is too small
@@ -454,7 +461,7 @@ public class WordFileTransformerService implements FileTransformerClient {
                         run.addPicture(image, format, fileName, Units.toEMU(width), Units.toEMU(height));
                         paragraph.setPageBreak(false);
                         imageCount++;
-                        XWPFParagraph captionParagraph = document.createParagraph();
+                        XWPFParagraph captionParagraph = document.insertNewParagraph(paragraph.getCTP().newCursor());
                         captionParagraph.setAlignment(ParagraphAlignment.CENTER);
                         captionParagraph.setSpacingBefore(0);
                         captionParagraph.setStyle("Caption");
@@ -491,7 +498,7 @@ public class WordFileTransformerService implements FileTransformerClient {
         return referenceTypeField.getReferenceType().getName();
     }
 
-    private void buildPlanSectionSystemField(PlanModel planEntity, XWPFDocument document, SystemFieldModel systemField) {
+    private void buildPlanSectionSystemField(PlanModel planEntity, XWPFDocument document, SystemFieldModel systemField, XmlCursor cursor) {
         if (systemField == null) throw new MyApplicationException("SystemField required");
         if (planEntity == null) throw new MyApplicationException("planEntity required");
         if (document == null) throw new MyApplicationException("Document required");
@@ -499,7 +506,7 @@ public class WordFileTransformerService implements FileTransformerClient {
         if (PlanBlueprintSystemFieldType.Language.equals(systemField.getSystemFieldType()) || PlanBlueprintSystemFieldType.User.equals(systemField.getSystemFieldType())) return;
 
 
-        XWPFParagraph systemFieldParagraph = document.createParagraph();
+        XWPFParagraph systemFieldParagraph = document.insertNewParagraph(cursor);
         XWPFRun runSyStemFieldTitle = systemFieldParagraph.createRun();
         runSyStemFieldTitle.setText(this.getSystemFieldLabel(systemField) + ": ");
         runSyStemFieldTitle.setColor("000000");
@@ -511,7 +518,9 @@ public class WordFileTransformerService implements FileTransformerClient {
                 runTitle.setColor("116a78");
                 break;
             case Description:
-                wordBuilder.addParagraphContent(planEntity.getDescription(), document, ParagraphStyle.HTML, BigInteger.ZERO, 0);
+                XmlCursor afterLabelCursor = systemFieldParagraph.getCTP().newCursor();
+                afterLabelCursor.toNextSibling();
+                wordBuilder.addParagraphContent(planEntity.getDescription(), document, ParagraphStyle.HTML, BigInteger.ZERO, 0, afterLabelCursor,false, false, null, null);
                 break;
             case AccessRights:
                 if (planEntity.getAccessType() != null) {
@@ -561,9 +570,9 @@ public class WordFileTransformerService implements FileTransformerClient {
 	    };
     }
 
-    private void buildPlanSectionExtraField(PlanModel planEntity, XWPFDocument document, ExtraFieldModel extraFieldModel) {
+    private void buildPlanSectionExtraField(PlanModel planEntity, XWPFDocument document, ExtraFieldModel extraFieldModel, XmlCursor cursor) {
         if (extraFieldModel == null) throw new MyApplicationException("ExtraFieldModel required");
-        XWPFParagraph extraFieldParagraph = document.createParagraph();
+        XWPFParagraph extraFieldParagraph = document.insertNewParagraph(cursor);
         extraFieldParagraph.setSpacingBetween(1.0);
         XWPFRun runExtraFieldLabel = extraFieldParagraph.createRun();
         runExtraFieldLabel.setText(extraFieldModel.getLabel() + ": ");
@@ -574,7 +583,11 @@ public class WordFileTransformerService implements FileTransformerClient {
         if (planBlueprintValueModel != null) {
             switch (extraFieldModel.getDataType()) {
                 case RichTex:
-                    if(planBlueprintValueModel.getValue() != null && !planBlueprintValueModel.getValue().isBlank()) wordBuilder.addParagraphContent(planBlueprintValueModel.getValue(), document, ParagraphStyle.HTML, BigInteger.ZERO, 0);
+                    if(planBlueprintValueModel.getValue() != null && !planBlueprintValueModel.getValue().isBlank()) {
+                        XmlCursor afterLabelCursor = extraFieldParagraph.getCTP().newCursor();
+                        afterLabelCursor.toNextSibling();
+                        wordBuilder.addParagraphContent(planBlueprintValueModel.getValue(), document, ParagraphStyle.HTML, BigInteger.ZERO, 0, afterLabelCursor,false, false,null, null);
+                    }
                     break;
                 case Number:
                     if(planBlueprintValueModel.getNumberValue() != null) {
@@ -617,7 +630,7 @@ public class WordFileTransformerService implements FileTransformerClient {
         return fileName + extension;
     }
 
-    private byte[] buildDescriptionWordDocument(DescriptionModel descriptionModel) throws IOException {
+    private byte[] buildDescriptionWordDocument(DescriptionModel descriptionModel) {
         if (descriptionModel == null) throw new MyApplicationException("DescriptionEntity required");
         PlanModel planEntity = descriptionModel.getPlan();
         if (planEntity == null)  throw new MyApplicationException("plan is invalid");
@@ -639,35 +652,33 @@ public class WordFileTransformerService implements FileTransformerClient {
         }
 
         this.wordBuilder.fillFirstPage(planEntity, descriptionModel, document, true);
+
+        XWPFParagraph formCodeParagraph = this.wordBuilder.findParagraphFormCode(document, "'{OPENCDMP.DESCRIPTION.FORM}'");
+
+        if (formCodeParagraph != null) {
+            formCodeParagraph.getRuns().forEach(run -> run.setText("", 0));
+            try {
+                this.wordBuilder.build(document, descriptionModel.getDescriptionTemplate(), descriptionModel.getProperties(), new VisibilityServiceImpl(descriptionModel.getVisibilityStates()), formCodeParagraph);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
         this.wordBuilder.fillFooter(planEntity, descriptionModel, document);
         this.wordBuilder.fillHeader(planEntity, descriptionModel, document);
-
-        int powered_pos = this.wordBuilder.findPosOfPoweredBy(document);
-        XWPFParagraph powered_par = null;
-        XWPFParagraph argos_img_par = null;
-        if(powered_pos != -1) {
-            powered_par = document.getParagraphArray(powered_pos);
-            argos_img_par = document.getParagraphArray(powered_pos + 1);
-        }
-
-        this.wordBuilder.build(document, descriptionModel.getDescriptionTemplate(), descriptionModel.getProperties(), new VisibilityServiceImpl(descriptionModel.getVisibilityStates()));
-        
-        if(powered_pos != -1) {
-            document.getLastParagraph().setPageBreak(false);
-            document.createParagraph();
-            document.setParagraph(powered_par, document.getParagraphs().size() - 1);
-
-            document.createParagraph();
-            document.setParagraph(argos_img_par, document.getParagraphs().size() - 1);
-
-            document.removeBodyElement(powered_pos + 1);
-            document.removeBodyElement(powered_pos + 1);
-        }
         
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        document.write(out);
+        try {
+            document.write(out);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         byte[] bytes = out.toByteArray();
-        out.close();
+        try {
+            out.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         return bytes;
     }
