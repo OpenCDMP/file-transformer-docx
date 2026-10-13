@@ -35,6 +35,9 @@
     <logger name="gr.cite" level="${LOGGING_DEFAULT_LOG_LEVEL}" additivity="false">
         <appender-ref ref="TROUBLESHOOTING"/>
     </logger>
+    <logger name="com.deepoove" level="WARN" additivity="false">
+        <appender-ref ref="TROUBLESHOOTING"/>
+    </logger>
     <logger name="org.springframework.data.elasticsearch.client.WIRE" level="${LOGGING_DEFAULT_LOG_LEVEL}" additivity="false">
         <appender-ref ref="TROUBLESHOOTING"/>
     </logger>

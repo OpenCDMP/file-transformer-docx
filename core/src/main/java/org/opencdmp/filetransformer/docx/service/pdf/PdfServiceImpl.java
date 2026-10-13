@@ -35,6 +35,13 @@ public class PdfServiceImpl implements PdfService {
         ).build();
 		MultipartBodyBuilder builder = new MultipartBodyBuilder();
 		builder.part("files", new ByteArrayResource(file)).filename(UUID.randomUUID() + ".docx");
+		// archival output (Gotenberg LibreOffice route): e.g. PDF/A-2b, and/or PDF/UA accessibility
+		if (this.pdfServiceProperties.getPdfaFormat() != null && !this.pdfServiceProperties.getPdfaFormat().isBlank()) {
+			builder.part("pdfa", this.pdfServiceProperties.getPdfaFormat());
+		}
+		if (this.pdfServiceProperties.isPdfua()) {
+			builder.part("pdfua", "true");
+		}
 
 		return webClient.post().uri("forms/libreoffice/convert")
                 .headers(httpHeaders -> {

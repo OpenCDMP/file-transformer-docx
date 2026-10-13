@@ -12,6 +12,7 @@ public class AuditableAction {
     public static final EventId FileTransformer_GetSupportedFormats = new EventId(1004, "FileTransformer_GetSupportedFormats");
     public static final EventId FileTransformer_PreprocessingPlan = new EventId(1005, "FileTransformer_PreprocessingPlan");
     public static final EventId FileTransformer_PreprocessingDescription = new EventId(1006, "FileTransformer_PreprocessingDescription");
+    public static final EventId FileTransformer_ValidateTemplate = new EventId(1007, "FileTransformer_ValidateTemplate");
 
 
 }

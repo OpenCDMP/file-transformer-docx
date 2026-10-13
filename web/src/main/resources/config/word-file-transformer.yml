@@ -12,12 +12,389 @@ word-file-transformer:
   useSharedStorage: ${WORD_FILE_TRANSFORMER_USE_SHARED_STORAGE:false}
   languages: classpath:languages.json
   configuration-fields:
+    # grouped for editors by `group`, in this order; stored values keep the formats WordExportOptions parses
     - code: plan-docx-template-id
       type: 1
-      label: Plan Docx Template
+      label: "Plan template"
+      group: "Templates & branding"
+      description: "A Word file laid out with {{...}} tags, used instead of the built-in design. See the plugin documentation for the available tags."
       appliesTo: [ 0 ]
     - code: description-docx-template-id
       type: 1
-      label: Description Docx Template
+      label: "Asset template"
+      group: "Templates & branding"
+      description: "The same for exports of a single asset."
       appliesTo: [ 1 ]
-  user-configuration-fields:
+    - code: accent-color
+      type: 4
+      label: "Accent colour"
+      group: "Templates & branding"
+      description: "Used for headings, table headers and links of the built-in design."
+      appliesTo: [ 0, 1 ]
+    - code: cover-logo
+      type: 1
+      label: "Cover logo"
+      group: "Templates & branding"
+      description: "A PNG or JPEG image shown at the top of the cover page."
+      appliesTo: [ 0, 1 ]
+    - code: layout-asset-placement
+      type: 3
+      label: "Where assets appear"
+      group: "Document structure"
+      description: "Assets are the datasets, software and other outputs described in a plan."
+      defaultValue: "sections"
+      appliesTo: [ 0 ]
+      options:
+        - label: "After each section's content"
+          value: "sections"
+        - label: "Grouped before the sections"
+          value: "before"
+        - label: "Grouped after the sections"
+          value: "after"
+    - code: layout-cover
+      type: 3
+      label: "Cover page"
+      group: "Document structure"
+      description: "Title, description and key facts on the first page."
+      defaultValue: "true"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Include"
+          value: "true"
+        - label: "Leave out"
+          value: "false"
+    - code: layout-toc
+      type: 3
+      label: "Table of contents"
+      group: "Document structure"
+      description: "Sections and assets, with page numbers."
+      defaultValue: "true"
+      appliesTo: [ 0 ]
+      options:
+        - label: "Include"
+          value: "true"
+        - label: "Leave out"
+          value: "false"
+    - code: layout-toc-depth
+      type: 3
+      label: "Table of contents depth"
+      group: "Document structure"
+      description: "How many heading levels the table of contents lists."
+      defaultValue: "2"
+      appliesTo: [ 0 ]
+      options:
+        - label: "Plan sections"
+          value: "1"
+        - label: "Plan sections and assets"
+          value: "2"
+        - label: "Also asset sections"
+          value: "3"
+        - label: "Also asset sub-sections"
+          value: "4"
+    - code: layout-numbering
+      type: 3
+      label: "Section numbering"
+      group: "Document structure"
+      description: "Numbers such as 1, 1.1 and 1.2 before headings."
+      defaultValue: "true"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Numbered"
+          value: "true"
+        - label: "Unnumbered"
+          value: "false"
+    - code: layout-section-page-break
+      type: 3
+      label: "Start each section on a new page"
+      group: "Document structure"
+      description: "Otherwise sections follow each other on the same page."
+      defaultValue: "false"
+      appliesTo: [ 0 ]
+      options:
+        - label: "Start each section on a new page"
+          value: "true"
+        - label: "Continue on the same page"
+          value: "false"
+    - code: layout-asset-page-break
+      type: 3
+      label: "Start each asset on a new page"
+      group: "Document structure"
+      description: "Otherwise assets follow each other on the same page."
+      defaultValue: "false"
+      appliesTo: [ 0 ]
+      options:
+        - label: "Start each asset on a new page"
+          value: "true"
+        - label: "Continue on the same page"
+          value: "false"
+    - code: page-size
+      type: 3
+      label: "Page size"
+      group: "Document structure"
+      description: "A4 or US Letter, for every page of the export."
+      defaultValue: "A4"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "A4"
+          value: "A4"
+        - label: "Letter"
+          value: "Letter"
+    - code: date-format
+      type: 0
+      label: "Date format"
+      group: "Document structure"
+      description: "How dates are written, as a pattern: dd/MM/yyyy gives 30/09/2026, d MMMM yyyy gives 30 September 2026."
+      defaultValue: "dd/MM/yyyy"
+      appliesTo: [ 0, 1 ]
+    - code: layout-question-style
+      type: 3
+      label: "Question layout"
+      group: "Questions & answers"
+      description: "How each question and its answer are laid out."
+      defaultValue: "stacked"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Question above answer"
+          value: "stacked"
+        - label: "Question and answer table"
+          value: "table"
+        - label: "Answers only"
+          value: "compact"
+    - code: layout-question-guidance
+      type: 3
+      label: "Question guidance"
+      group: "Questions & answers"
+      description: "The help texts of blueprint sections and questions."
+      defaultValue: "false"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Leave out"
+          value: "false"
+        - label: "Show the help texts of sections and questions"
+          value: "true"
+    - code: unanswered-questions
+      type: 3
+      label: "Unanswered questions"
+      group: "Questions & answers"
+      description: "Leave questions without an answer out, or keep them marked as not answered."
+      defaultValue: "hide"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Leave out"
+          value: "hide"
+        - label: "Show as \"Not answered\""
+          value: "placeholder"
+    - code: layout-comments
+      type: 3
+      label: "Comments"
+      group: "Questions & answers"
+      description: "Comments left on questions while the plan was written."
+      defaultValue: "true"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Include"
+          value: "true"
+        - label: "Leave out"
+          value: "false"
+    - code: layout-table-style
+      type: 3
+      label: "Table style"
+      group: "Questions & answers"
+      description: "How tables of answers and references are drawn."
+      defaultValue: "lined"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Lined"
+          value: "lined"
+        - label: "Grid"
+          value: "grid"
+        - label: "Striped"
+          value: "striped"
+    - code: layout-reference-style
+      type: 3
+      label: "Reference layout"
+      group: "References"
+      description: "Answers that point to funders, researchers, licences and other references."
+      defaultValue: "detailed"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Name and details"
+          value: "detailed"
+        - label: "Name only"
+          value: "compact"
+        - label: "Table"
+          value: "table"
+    - code: layout-reference-fields
+      type: 9
+      label: "Details per reference type"
+      group: "References"
+      description: "Which details to show for each type, in order. Types left as they are show every detail they have."
+      appliesTo: [ 0, 1 ]
+    - code: layout-plan-facts
+      type: 7
+      label: "Plan cover facts"
+      group: "Cover facts"
+      description: "The rows of the key facts table on a plan's cover. Rows without a value in a plan are left out of that plan's export."
+      defaultValue: "funders, ${WORD_FILE_TRANSFORMER_GRANTS_CODE:grants}, ${WORD_FILE_TRANSFORMER_RESEARCHERS_CODE:researchers}, ${WORD_FILE_TRANSFORMER_ORGANIZATIONS_CODE:organisations}, contacts, doi"
+      optionsSource: referenceTypes
+      appliesTo: [ 0 ]
+      options:
+        - label: "Contacts"
+          value: "contacts"
+        - label: "DOI, once deposited"
+          value: "doi"
+        - label: "Version"
+          value: "version"
+        - label: "Status"
+          value: "status"
+        - label: "Blueprint"
+          value: "blueprint"
+        - label: "Language"
+          value: "language"
+        - label: "Access"
+          value: "access"
+        - label: "Created"
+          value: "created"
+        - label: "Last updated"
+          value: "updated"
+        - label: "Finalized"
+          value: "finalized"
+        - label: "Created by"
+          value: "creator"
+        - label: "Members"
+          value: "members"
+    - code: layout-asset-facts
+      type: 7
+      label: "Asset cover facts"
+      group: "Cover facts"
+      description: "The rows of the key facts table on an asset's cover."
+      defaultValue: "type, template, plan, section, status, tags"
+      optionsSource: referenceTypes
+      appliesTo: [ 1 ]
+      options:
+        - label: "Type"
+          value: "type"
+        - label: "Template"
+          value: "template"
+        - label: "Part of (plan)"
+          value: "plan"
+        - label: "Section"
+          value: "section"
+        - label: "Status"
+          value: "status"
+        - label: "Tags"
+          value: "tags"
+        - label: "Created"
+          value: "created"
+    - code: layout-labels
+      type: 8
+      label: "Wording"
+      group: "Wording"
+      description: "Your organisation's terms for the fixed texts of exports. Texts left empty keep the built-in wording in the plan's language."
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "Data Management Plan"
+          value: "planKind"
+        - label: "Asset"
+          value: "asset"
+        - label: "Assets"
+          value: "assets"
+        - label: "Contents"
+          value: "contents"
+        - label: "Version"
+          value: "version"
+        - label: "Status"
+          value: "status"
+        - label: "Created"
+          value: "created"
+        - label: "Updated"
+          value: "updated"
+        - label: "Finalized"
+          value: "finalized"
+        - label: "Exported"
+          value: "exported"
+        - label: "Template"
+          value: "template"
+        - label: "Type"
+          value: "type"
+        - label: "Section"
+          value: "section"
+        - label: "Part of"
+          value: "partOf"
+        - label: "Blueprint"
+          value: "blueprint"
+        - label: "Language"
+          value: "language"
+        - label: "Access"
+          value: "access"
+        - label: "Public"
+          value: "public"
+        - label: "Restricted"
+          value: "restricted"
+        - label: "Contact"
+          value: "contacts"
+        - label: "Created by"
+          value: "creator"
+        - label: "Members"
+          value: "users"
+        - label: "DOI"
+          value: "doi"
+        - label: "Tags"
+          value: "tags"
+        - label: "Not answered"
+          value: "notAnswered"
+        - label: "Comment"
+          value: "comment"
+        - label: "Yes"
+          value: "yes"
+        - label: "No"
+          value: "no"
+        - label: "Entry"
+          value: "entry"
+        - label: "Question"
+          value: "question"
+        - label: "Answer"
+          value: "answer"
+        - label: "Figure"
+          value: "image"
+        - label: "Attachment"
+          value: "attachment"
+        - label: "Generated with OpenCDMP"
+          value: "generatedWith"
+        - label: "Page"
+          value: "page"
+        - label: "of"
+          value: "of"
+        - label: "DRAFT"
+          value: "draft"
+    - code: draft-watermark
+      type: 3
+      label: "Draft watermark"
+      group: "Draft watermark"
+      description: "A large, light label across the pages of exports that are not finalized."
+      defaultValue: "true"
+      appliesTo: [ 0, 1 ]
+      options:
+        - label: "On exports that are not finalized"
+          value: "true"
+        - label: "Never"
+          value: "false"
+    - code: draft-watermark-text
+      type: 0
+      label: "Watermark text"
+      group: "Draft watermark"
+      description: "Leave empty to show the plan's or asset's status, e.g. UNDER REVIEW (DRAFT when it has none). A text set here is used for every status."
+      appliesTo: [ 0, 1 ]
+  # Nothing is asked of users at export time: page size, date format and unanswered questions are organisation settings
+  # above. The section and asset pickers of the export dialog are switched off for now; the transformer still honours
+  # the two codes when sent, so restoring these entries brings the pickers back.
+  user-configuration-fields: []
+  #  # rendered as entity-aware pickers by the export options dialog; hidden in profile editors
+  #  - code: include-sections
+  #    type: 0
+  #    label: Include Sections
+  #    appliesTo: [ 0 ]
+  #  - code: exclude-descriptions
+  #    type: 0
+  #    label: Exclude Assets
+  #    appliesTo: [ 0 ]

@@ -7,6 +7,8 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 public class PdfServiceProperties {
     private String url;
     private int maxInMemorySizeInBytes;
+    private String pdfaFormat;
+    private boolean pdfua;
 
     public String getUrl() {
         return url;
@@ -14,6 +16,22 @@ public class PdfServiceProperties {
 
     public void setUrl(String url) {
         this.url = url;
+    }
+
+    public String getPdfaFormat() {
+        return pdfaFormat;
+    }
+
+    public void setPdfaFormat(String pdfaFormat) {
+        this.pdfaFormat = pdfaFormat;
+    }
+
+    public boolean isPdfua() {
+        return pdfua;
+    }
+
+    public void setPdfua(boolean pdfua) {
+        this.pdfua = pdfua;
     }
 
     public int getMaxInMemorySizeInBytes() {

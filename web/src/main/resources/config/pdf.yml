@@ -2,3 +2,5 @@ pdf:
   converter:
     url: ${PDF_CONVERTER_URL}
     maxInMemorySizeInBytes: 6554000
+    pdfa-format: ${PDF_CONVERTER_PDFA_FORMAT:}
+    pdfua: ${PDF_CONVERTER_PDFUA:false}
